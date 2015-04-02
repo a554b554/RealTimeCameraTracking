@@ -1,0 +1,5 @@
+/Users/changxiao/Documents/SfM-Toy-Library-master/3rdparty/SSBA-3.0/build/Apps/CMakeFiles/bundle_varying.dir
+/Users/changxiao/Documents/SfM-Toy-Library-master/3rdparty/SSBA-3.0/build/Apps/CMakeFiles/bundle_varying_nonlinlsq.dir
+/Users/changxiao/Documents/SfM-Toy-Library-master/3rdparty/SSBA-3.0/build/CMakeFiles/colamd.dir
+/Users/changxiao/Documents/SfM-Toy-Library-master/3rdparty/SSBA-3.0/build/CMakeFiles/V3D.dir
+/Users/changxiao/Documents/SfM-Toy-Library-master/3rdparty/SSBA-3.0/build/Apps/CMakeFiles/bundle_common.dir
