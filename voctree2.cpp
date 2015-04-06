@@ -59,7 +59,8 @@ void VocTree::init(int branch, int level){
     cout<<"updating complete!"<<endl;
     std::cout<<"time cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
     
-    
+    cv::flann::KDTreeIndexParams indexParams(5);
+    kdtree.build(alldescriptor, indexParams);
     
     //build kdtree for search.
    /* cout<<"building kdtree..."<<endl;
@@ -156,6 +157,9 @@ void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int
     vector<DMatch> matches;
     int64 t0 = getTickCount();
     matcher.match(liveframe.descriptor, alldescriptor, matches);
+    //vector<int> index;
+    //vector<float> dist;
+    //kdtree.knnSearch(liveframe.descriptor, index, dist, 1);
     cout<<"time for matching: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
     //t0 = getTickCount();
     for (int i = 0; i < liveframe.descriptor.rows; i++) {
@@ -265,7 +269,7 @@ void VocTree::updateloc(){
     }
 }
 
-void VocTree::cvtFrame(const cv::Mat &img, Frame & fm){
+void VocTree::cvtFrame(const cv::Mat &img, Frame& fm){
     SiftFeatureDetector detector(500);
     SiftDescriptorExtractor extractor;
     img.copyTo(fm.img);
@@ -273,7 +277,24 @@ void VocTree::cvtFrame(const cv::Mat &img, Frame & fm){
     extractor.compute(img, fm.keypoint, fm.descriptor);
 }
 
+void drawmatchedfeature(const Frame& fm, const std::vector<DMatch>& matches, Mat& outputimg){
+    std::vector<KeyPoint> kpt;
+    for (int i = 0; i < matches.size(); i++) {
+        if (matches[i].imgIdx != -1) {
+            kpt.push_back(fm.keypoint[matches[i].queryIdx]);
+        }
+    }
+    drawKeypoints(fm.img, kpt, outputimg);
+    imshow(to_string(rand()+400), outputimg);
+}
+
+bool kptsort(const KeyPoint& a, const KeyPoint& b){
+    return a.response > b.response;
+}
+
 void VocTree::matching(const std::vector<int> &candidateframe, Frame &onlineframe, std::vector<DMatch>& matches){
+    //sort keypoint by DoG strength
+    std::sort(onlineframe.keypoint.begin(), onlineframe.keypoint.end(), kptsort);
     std::vector<box> boxes(64);
     for (int i = 0; i < boxes.size(); i++) {
         boxes[i].idx = i;
@@ -291,6 +312,7 @@ void VocTree::matching(const std::vector<int> &candidateframe, Frame &onlinefram
         boxes[bid].count++;
         boxes[bid].descriptor.push_back(i);
     }
+
     std::sort(boxes.begin(), boxes.end(), greater<box>());
     
     //step1: set c1(xj) and c2(xj) to 0.
@@ -299,14 +321,18 @@ void VocTree::matching(const std::vector<int> &candidateframe, Frame &onlinefram
     std::fill(c1.begin(), c1.end(), 0);
     std::fill(c2.begin(), c2.end(), 0);
     
-    
+    std::vector<int> ptcount(candidateframe.size());
+    std::fill(ptcount.begin(), ptcount.end(), 0);
     //step2: perform first-pass matching.
+    
+label:
     for (int i = 0; i < boxes.size(); i++) {
         box* currBox = &boxes[i];
 
         for (int j = 0; j < currBox->descriptor.size(); j++) {
 
             int desID = currBox->descriptor[j];
+            bool matched = false;
             if (c1[desID] == 0) {//for each unmatched feature xj in Bi and c1(xj)=0
                 c1[desID] = 1;
                 
@@ -329,13 +355,96 @@ void VocTree::matching(const std::vector<int> &candidateframe, Frame &onlinefram
                         match.distance = dists[0];
                         match.imgIdx = candidateframe[k];
                         matches.push_back(match);
-                        break;
+                        ptcount[k]++;
+                        //matched = true;
+                        //break;
                     }
                 }
+            }
+            if (matched) {
+                break;
             }
         }
     }
     std::vector<Mat> fundamentalmatrixes(candidateframe.size());
+    //find fundamental matrix for each candidate frame
+    int remain = 0;
+    for (int i = 0; i < candidateframe.size(); i++) {
+        Mat pt1(ptcount[i],2,CV_32F); // origin frame
+        Mat pt2(ptcount[i],2,CV_32F); // matched keyframe
+        int cc = 0;
+        std::vector<int> idx;
+        for (int j = 0; j < matches.size(); j++) {
+            DMatch* currMatch = &matches[j];
+            if (currMatch->imgIdx == candidateframe[i]) {
+                pt1.at<float>(cc,0) = onlineframe.keypoint[currMatch->queryIdx].pt.x;
+                pt1.at<float>(cc,1) = onlineframe.keypoint[currMatch->queryIdx].pt.y;
+                
+                pt2.at<float>(cc,0) = keyframes[candidateframe[i]].keypoint[currMatch->trainIdx].pt.x;
+                pt2.at<float>(cc,0) = keyframes[candidateframe[i]].keypoint[currMatch->trainIdx].pt.y;
+                cc++;
+                idx.push_back(j);
+            }
+        }
+        
+        //find fundamental matrix.
+        std::vector<uchar> mask;
+        fundamentalmatrixes[i] = findFundamentalMat(pt1, pt2, mask, FM_RANSAC);
     
+        Mat opt;
+       // drawmatchedfeature(onlineframe, matches, opt);
+        cout<<"before remove: "<<cc<<endl;
+        //remove outlier
+        for (int j = 0; j < mask.size(); j++) {
+            if (mask[j] == 0) {
+                matches[idx[j]].imgIdx = -1;
+                cc--;
+            }
+        }
+        //drawmatchedfeature(onlineframe, matches,opt);
+        cout<<"after remove: "<<cc<<endl;
+        remain += cc;
+    }
+    cout<<"final: "<<remain<<endl;
+}
+
+void VocTree::calibrate(const Frame &onlineframe, const std::vector<DMatch> &matches, cv::Mat& rvec, cv::Mat&tvec){
+    vector<Point3f> objpoints;
+    vector<Point2f> imgpoints;
+    for (int i = 0; i < matches.size(); i++) {
+        if (matches[i].imgIdx != -1) {
+            Point2f imgpt;
+            Point3f objpt;
+            int featureid = keyframes[matches[i].imgIdx].pos_id[matches[i].trainIdx];
+            imgpt = onlineframe.keypoint[matches[i].queryIdx].pt;
+            objpt = keyframes[matches[i].imgIdx].pos3d[featureid];
+            objpoints.push_back(objpt);
+            imgpoints.push_back(imgpt);
+        }
+    }
+    float data[9] = {static_cast<float>(keyframes[0].F),0,0,0,static_cast<float>(keyframes[0].F),0 ,0,0,1};
+    Mat cameraMat(3,3,CV_32F,data);
+    Mat distCoeffs;
+    solvePnP(objpoints, imgpoints, cameraMat, distCoeffs, rvec, tvec);
+    //calibrateCamera(objpoints, imgpoints, onlineframe.img.size(), cameraMat, distCoeffs, rvec, tvec);
+}
+
+void VocTree::rendering(const Frame &onlineframe, const cv::Mat &rvec, const cv::Mat &tvec, cv::Mat &outputimg){
+    onlineframe.img.copyTo(outputimg);
+    std::vector<Point3f> pt3d;
+    for (int i = 0; i < scenepoints.size(); i++) {
+        pt3d.push_back(scenepoints[i].pt);
+    }
+
+    std::vector<Point2f> pt2d;
+    float data[9] = {static_cast<float>(keyframes[0].F),0,keyframes[0].location.x,0,static_cast<float>(keyframes[0].F),keyframes[0].location.y,0,0,1};
+    Mat cameraMat(3,3,CV_32F,data);
+    Mat distCoeffs;
+    projectPoints(pt3d, rvec, tvec, cameraMat, distCoeffs, pt2d);
     
+    int myradius=3;
+    for (int i=0;i<pt2d.size();i++){
+        circle(outputimg,cvPoint(pt2d[i].x,pt2d[i].y),myradius,CV_RGB(100,0,0),-1,8,0);
+    }
+    imshow("show", outputimg);
 }

@@ -10,6 +10,7 @@
 #define __RCT__VocabularyTree__
 
 #include <opencv2/features2d/features2d.hpp>
+#include <opencv2/flann/flann.hpp>
 #include <opencv2/core/core.hpp>
 #include <vector>
 #include "ScenePoint.h"
@@ -56,6 +57,7 @@ private:
     void updateweight(treenode& node);
     void updateimg(treenode& node);
     double minDistInNode(const treenode& node, const Mat& descriptor);
+    
     
    // void updateweightfornode(treenode& node, int L);
 };

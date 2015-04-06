@@ -206,11 +206,7 @@ void VocabularyTree::findCandidateFrame(const Frame &inputliveframe, std::vector
                     minnode = curr;
                 }
                 que.pop();
-                
-                
-                
             }
-            
             if (minnode->weight > THRESHOLD_FOR_WEIGHT) {
                 for (int j = 0; j < minnode->img.size(); j++) {
                     if (iskeyframe(minnode->img[j])) {
@@ -218,25 +214,8 @@ void VocabularyTree::findCandidateFrame(const Frame &inputliveframe, std::vector
                     }
                 }
             }
-            
-            
-            
-            
-            
-            
-            
-            
-            
-            
         }
-        
-        
     }
-    
-    
-    
-    
-    
 }
 
 double VocabularyTree::minDistInNode(const treenode &node, const cv::Mat &descriptor){

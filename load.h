@@ -19,7 +19,7 @@
 
 #endif /* defined(__RCT__load__) */
 
-void load(const char* filename, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint, int type = 0);
+void load(const string basepath, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 void load2(const char* filename, std::vector<Frame>& keyframes, std::vector<ScenePoint>& scenepoints, const std::vector<int>& key);
 
 

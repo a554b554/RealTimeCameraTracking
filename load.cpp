@@ -16,6 +16,16 @@
 #include <opencv2/nonfree/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/nonfree/ocl.hpp>
+static int64 __timer;
+void initTimer(){
+    __timer = getTickCount();
+    cout<<"begin time counting..."<<endl;
+}
+void getTimer(){
+    cout<<"time cost: "<<(getTickCount()-__timer)/getTickFrequency()<<endl;
+    __timer = getTickCount();
+}
+
 
 double dist(Point2f a, Point2f b){
     return (a.x-b.x)*(a.x-b.x) + (a.y-b.y)*(a.y-b.y);
@@ -274,29 +284,21 @@ void computekeypoint(Frame& frame, map<int, Point2f> & point){
     SiftFeatureDetector detector;
     vector<KeyPoint> kpt;
     detector.detect(frame.img, kpt);
-    
     //cout<<"pointsize: "<<point.size()<<endl;
-    
     Mat data,querydata;
-    data.create(kpt.size(), 2, CV_32F);
-    querydata.create(point.size(), 2, CV_32F);
+    data.create((int)kpt.size(), 2, CV_32F);
+    querydata.create((int)point.size(), 2, CV_32F);
     for (int i = 0; i < data.rows; i++) {
         data.at<float>(i,0) = kpt[i].pt.x;
         data.at<float>(i,1) = kpt[i].pt.y;
     }
     int i = 0;
-    /*for (int i = 0; i < querydata.rows; i++) {
-        querydata.at<float>(i,0) = point[i].x;
-        querydata.at<float>(i,1) = point[i].y;
-    }*/
     map<int,Point2f>::iterator it;
     for (it = point.begin(); it != point.end(); it++) {
         querydata.at<float>(i,0) = it->second.x;
         querydata.at<float>(i,1) = it->second.y;
         i++;
     }
-    
-    
     FlannBasedMatcher matcher;
     vector<DMatch> matches;
     matcher.match(querydata, data, matches);
@@ -346,28 +348,18 @@ void gettime(int64& t0){
 
 }
 
-
-
-
-
-
-
-
-void load(const char* filename, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint, int type){
+void load(const string basepath, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint){
     ifstream file_obj;
-    int64 t0 = getTickCount();
     int numberofframe;
-    file_obj.open(filename);
+    file_obj.open(basepath+"/data.nvm");
     if (!file_obj.is_open()) {
-        cerr<<"open "<<filename<<" failed!"<<endl;
+        cerr<<"open "<<basepath+"./data.nvm"<<" failed!"<<endl;
         exit(1);
     }
     string c; //useless
     file_obj>>c;
     //load number of frame;
     file_obj>>numberofframe;
-    //cout<<numberofframe<<endl;
-    
     //init frame set
     for (int i = 0; i < numberofframe ; i++) {
         Frame *tmp = new Frame();
@@ -375,149 +367,99 @@ void load(const char* filename, std::vector<Frame>& globalframe, std::vector<Sce
     }
     //load camera parameters;
     cout<<"loading camera parameters..."<<endl;
+    initTimer();
     for (int i = 0; i < numberofframe; i++) {
         string fn;
         file_obj>>fn;
-        
-        globalframe[i].img = cv::imread("./campusSFM/"+fn);
-        //cout<<c<<endl;
+        globalframe[i].img = cv::imread(basepath+"/"+fn);
+        if (globalframe[i].img.empty()) {
+            cerr<<"read image "+fn+" failed!"<<endl;
+            exit(0);
+        }
         file_obj>>globalframe[i].F;
-        //cout<<globalframe[i].F<<endl;
         double a;
-        
         //quanternions
         file_obj>>a;
-        //cout<<a<<endl;
         globalframe[i].quanternions.push_back(a);
         file_obj>>a;
-        //cout<<a<<endl;
         globalframe[i].quanternions.push_back(a);
         file_obj>>a;
-        //cout<<a<<endl;
         globalframe[i].quanternions.push_back(a);
         file_obj>>a;
-        //cout<<a<<endl;
         globalframe[i].quanternions.push_back(a);
-        
-        // camera center
         file_obj>>globalframe[i].location.x;
         file_obj>>globalframe[i].location.y;
         file_obj>>globalframe[i].location.z;
-        
         //radial distortion
         file_obj>>globalframe[i].k;
-        
         file_obj>>c;
     }
-    gettime(t0);
-    
-    
+    getTimer();
     //load scene point information
     cout<<"loading scene point information..."<<endl;
+    initTimer();
     int numberof3dpoint;
     file_obj>>numberof3dpoint;
     //cout<<numberof3dpoint<<endl;
-    
     int count = 0;
     for (int i = 0; i < numberof3dpoint; i++) {
         ScenePoint *tmp = new ScenePoint();
-        
         //load location
         file_obj >> tmp -> pt.x;
         file_obj >> tmp -> pt.y;
         file_obj >> tmp -> pt.z;
-        
         //load RGB
         file_obj >> tmp -> RGB.x;
         file_obj >> tmp -> RGB.y;
         file_obj >> tmp -> RGB.z;
-        
         int numofmeasure;
         file_obj>>numofmeasure;
-        
         for (int j = 0; j < numofmeasure; j++) {
             int img;
             file_obj>>img;
             tmp -> img.push_back(img);
-            
             if (numofmeasure > MIN_TRACK) {
                 globalframe[img].scenepoint.push_back(count);
             }
-
-            
             int feature;
             file_obj>>feature;
             tmp ->feature.push_back(feature);
-            
-            
-            
             //feature's 2D position
             // cout<<feature<<endl;
             double x,y;
             file_obj>>x>>y;
             double xsize = globalframe[img].img.cols/2;
             double ysize = globalframe[img].img.rows/2;
-            if (type == 0) {
-                x += xsize; y+= ysize;
-            }
-            
-            
+            x += xsize;
+            y += ysize;
             Point2f p(x,y);
             tmp->location.push_back(p);
-            
-        
             if (numofmeasure > MIN_TRACK) {
                 globalframe[img].pos[feature] = p;
+                globalframe[img].pos3d[feature] = tmp->pt;
                 //globalframe[img].pos.push_back(p);
                 //globalframe[img].pos_id.push_back(feature);
                 globalframe[img].featuresize++;
             }
-            
-            
-            //cout<<p<<endl;
         }
         if (numofmeasure > MIN_TRACK) {
             globalscenepoint.push_back(*tmp);
             count++;
-            delete tmp;
         }
-        else{
-            delete tmp;
-        }
-        
+        delete tmp;
     }
-    gettime(t0);
     file_obj.close();
-    
-        
-    
-    
-    
 }
 
 void computeAttribute(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint){
-    int64 t0 =getTickCount();
-    //clear frame empty feature.
-    /*cout<<"clear empty feature..."<<endl;
-    for (int i = 0; i < globalframe.size(); i++) {
-        
-        while(globalframe[i].pos.end()->x == 0.0 && globalframe[i].pos.end()->y == 0.0){
-            globalframe[i].pos.pop_back();
-        }
-    }
-    gettime(t0);*/
-    
-    
+    initTimer();
     // compute keypoint in each frame.
     cout<<"compute keypoint in each frame..."<<endl;
     for (int i = 0; i < globalframe.size(); i++) {
         computekeypoint(globalframe[i], globalframe[i].pos);
     }
-    gettime(t0);
-    
+    getTimer();
     //drawmatch(globalframe[12], "test");
-    
-    
     // compute dog mat in each frame.
     cout<<"compute dog image in each frame..."<<endl;
     for (int i = 0; i < globalframe.size(); i++) {
@@ -536,7 +478,7 @@ void computeAttribute(std::vector<Frame>& globalframe, std::vector<ScenePoint>& 
          waitKey(0);*/
     }
     //  imshow("1", globalframe[6].dogimg);
-    gettime(t0);
+    
     
     
     
@@ -545,7 +487,7 @@ void computeAttribute(std::vector<Frame>& globalframe, std::vector<ScenePoint>& 
     for (int i = 0; i < globalscenepoint.size(); i++) {
         calcSaliency(globalscenepoint[i], globalframe);
     }
-    gettime(t0);
+    
     
     
     //calculate feature density
@@ -572,16 +514,12 @@ void computeAttribute(std::vector<Frame>& globalframe, std::vector<ScenePoint>& 
             //cout<<"density: "<<count<<"size: "<<globalframe[i].pos.size()<<endl;
             globalframe[i].featuredensity.push_back(count);
         }
-        
-        
-        
     }
-    gettime(t0);
     
     //calculate descriptor
     cout<<"calculate descriptor... "<<endl;
     calculateDescriptor(globalframe, globalscenepoint);
-    gettime(t0);
+    
 
 }
 
@@ -714,7 +652,7 @@ void load2(const char* filename, std::vector<Frame>& keyframes, std::vector<Scen
             if (numofmeasure > MIN_TRACK) {
                 //globalframe[img].pos.push_back(p);
                 curr->pos[feature] = p;
-                
+                curr->pos3d[feature] = tmp->pt;
                 //curr->pos.push_back(p);
                 //curr->pos_id.push_back(feature);
                 //curr->featuresize++;

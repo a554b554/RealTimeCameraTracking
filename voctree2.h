@@ -48,14 +48,20 @@ public:
     void cvtFrame(const Mat& img, Frame& fm);
     void matching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<DMatch>& matches);
     
+    void calibrate(const Frame& onlineframe, const std::vector<DMatch>& matches, Mat& rvec, Mat& tvec);
+    void rendering(const Frame& onlineframe, const Mat& rvec, const Mat& tvec, Mat& outputimg);
+    
 private:
     std::vector<Frame> keyframes;
     std::vector<ScenePoint> scenepoints;
     std::vector<int> sizeofdescriptor;
     std::vector<int> rangeofdescriptor;
     FlannBasedMatcher matcher;
+    cv::flann::Index kdtree;
     std::vector< std::vector<int> > loc; //loc[j][i] = k means descriptor i is in the kth node in level j.
 };
+
+
 
 struct box{
     int idx;
@@ -69,5 +75,6 @@ struct box{
     {
         return count > thebox.count;
     }
+
 };
 #endif /* defined(__RCT__voctree2__) */
