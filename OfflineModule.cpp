@@ -13,12 +13,22 @@
 #include <algorithm>
 #include <set>
 #include "dump.h"
+static const int MAX_FRAME = 40000;
+
 
 /*uchar DoG(const Mat& dogimg, Point2f position){
     uchar ans = dogimg.at<uchar>((int)position.x ,(int)position.y);
     return ans;
 }*/
 
+static int64 _t0;
+static void initTimer(){
+    _t0 = getTickCount();
+    cout<<"timing.."<<endl;
+}
+static void getTimer(){
+    cout<<(getTickCount()-_t0)/getTickFrequency()<<endl;
+}
 
 int density(const vector<KeyPoint>& features, const Point2f& point){
     int ans = 0;
@@ -76,35 +86,33 @@ bool isScenePointInFrameSet(const ScenePoint& inputscenepoint, const std::vector
             }
         }
     }*/
-    int tmp[5000];
-    for (int i = 0; i < 5000; i++) {
+    char tmp[5000];
+    /*for (int i = 0; i < 5000; i++) {
         tmp[i] = 0;
-    }
-    
+    }*/
+    memset(tmp, 0, sizeof(char)*5000);
     for (int i = 0; i < frameset.size(); i++) {
-        tmp[frameset[i]] = 1;
+        tmp[frameset[i]] = '1';
     }
     
     for (int i = 0; i < inputscenepoint.img.size(); i++) {
-        if (tmp[inputscenepoint.img[i]] == 1) {
+        if (tmp[inputscenepoint.img[i]] == '1') {
             return true;
         }
     }
-    
-    
     return false;
 }
 
 
 const int yita = 3;
 double CompletenessTerm(const std::vector<Frame>& inputframe, const std::vector<int>& candidateframe, const std::vector<ScenePoint>& inputscenepoint){
+
     double ans;
     double factor1,factor2;  // ans = 1 - (factor1/factor2)
     factor1 = 0;
     factor2 = 0;
-    
     cout<<"computing completeness..."<<endl;
-    
+    initTimer();
     /*for (int i = 0; i < inputscenepoint.size(); i++) {
         double term = inputscenepoint[i].saliency/(yita + FeatureDensity(inputscenepoint[i], inputframe));
         std::vector<int> unionset;
@@ -114,6 +122,22 @@ double CompletenessTerm(const std::vector<Frame>& inputframe, const std::vector<
         }
         factor2 += term;
     }*/
+   /* int hashtable[MAX_FRAME];
+    memset(hashtable, 0, sizeof(int)*MAX_FRAME);
+    for (int i = 0; i < candidateframe.size(); i++) {
+        for (int j = 0; j < inputframe[candidateframe[i]].scenepoint.size(); j++) {
+            hashtable[inputframe[candidateframe[i]].scenepoint[j]] = 1;
+        }
+    }
+    std::vector<int> idx;
+    for (int i = 0; i < MAX_FRAME; i++) {
+        if (hashtable[i] == 1) {
+            idx.push_back(i);
+        }
+    }
+    for (int i = 0; i < idx.size(); i++) {
+        factor1 += inputscenepoint[idx[i]].saliency/(yita+FeatureDensity(inputscenepoint[idx[i]], inputframe));
+    }*/
     
     std::set<int> _set;
     for (int i = 0; i < candidateframe.size(); i++) {
@@ -121,7 +145,6 @@ double CompletenessTerm(const std::vector<Frame>& inputframe, const std::vector<
             _set.insert(inputframe[candidateframe[i]].scenepoint[j]);
         }
     }
-    
     std::set<int>::iterator it;
     for (it = _set.begin(); it != _set.end(); it++) {
         factor1 += inputscenepoint[*it].saliency/(yita+FeatureDensity(inputscenepoint[*it], inputframe));
@@ -131,16 +154,11 @@ double CompletenessTerm(const std::vector<Frame>& inputframe, const std::vector<
     for (int i = 0; i < inputscenepoint.size(); i++) {
         factor2 += inputscenepoint[i].saliency/(yita+FeatureDensity(inputscenepoint[i], inputframe));
     }
-    
-    
     cout<<"factor1 "<<factor1<<" factor2 "<<factor2<<endl;
-    
-    
     ans = 1 - (factor1 / factor2);
-    
     cout<<"compute complete!"<<endl;
     cout<<"Completeness: "<<ans<<endl;
-    
+    getTimer();
     return ans;
 }
 
@@ -150,9 +168,29 @@ double Redundancy(const std::vector<Frame>& inputframe, const std::vector<int>& 
     int ans = 0;
     
     cout<<"computing redundancy..."<<endl;
+    initTimer();
+   /* int hashtable[MAX_FRAME];
+    memset(hashtable, 0, sizeof(int)*MAX_FRAME);
+    for (int i = 0; i < candidateframe.size(); i++) {
+        for (int j = 0; j < inputframe[candidateframe[i]].scenepoint.size(); j++) {
+            hashtable[inputframe[candidateframe[i]].scenepoint[j]] = 1;
+        }
+    }
+    std::vector<int> idx;
+    for (int i = 0; i < MAX_FRAME; i++) {
+        if (hashtable[i] == 1) {
+            idx.push_back(i);
+        }
+    }
+    for (int i = 0; i < idx.size(); i++) {
+        std::vector<int> unionset;
+        unionframe(inputscenepoint[idx[i]].img, candidateframe, unionset);
+        if (!unionset.empty()) {
+            ans += unionset.size() - 1;
+        }
+    }*/
     
     std::set<int> _set;
-    
     for (int i = 0; i < candidateframe.size(); i++) {
         for (int j = 0; j < inputframe[candidateframe[i]].scenepoint.size(); j++) {
             _set.insert(inputframe[candidateframe[i]].scenepoint[j]);
@@ -168,31 +206,9 @@ double Redundancy(const std::vector<Frame>& inputframe, const std::vector<int>& 
             ans += unionset.size() - 1;
         }
     }
-    
-   /* for (int i = 0; i < inputscenepoint.size(); i++) {
-        std::vector<int> unionset;
-        unionframe(inputscenepoint[i].img, candidateframe, unionset);
-        if (!unionset.empty()) {
-           // int count = 0;
-            std::set<int> set;
-            for (int j = 0; j < inputscenepoint[i].img.size(); j++) {
-                for (int k = 0; k < candidateframe.size(); k++) {
-                    
-                    if (inputscenepoint[i].img[j] == candidateframe[k]) {
-                        set.insert(candidateframe[k]);
-                    }
-                }
-            }
-           // std::vector<int> unionset;
-           // unionframe(inputscenepoint[i].img, candidateframe, unionset);
-            
-           // cout<<"count"<<set.size()<<endl;
-            ans += unionset.size() - 1;
-        }
-    }*/
-    
     cout<<"compute complete!"<<endl;
     cout<<"Redundancy: "<<( (double)ans / inputframe.size())<<endl;
+    getTimer();
     return double(ans) / inputframe.size();
 }
 
@@ -208,11 +224,8 @@ bool frameisinframeset(const std::vector<int>& frameset, const int frameid){
 
 void KeyframeSelection(const std::vector<Frame>& inputframe, const std::vector<ScenePoint>& inputscenepoint
                        ,std::vector<int>& outputkeyframe){
-    const double redundancyfactor = 0.002;
-    
-    
+    const double redundancyfactor = 0.005;
     while (1) {
-       
         double origin_cost = redundancyfactor * Redundancy(inputframe, outputkeyframe, inputscenepoint)+
         CompletenessTerm(inputframe, outputkeyframe, inputscenepoint);
         cout<<"oringcost: "<<origin_cost<<endl;
@@ -224,32 +237,26 @@ void KeyframeSelection(const std::vector<Frame>& inputframe, const std::vector<S
                 cout<<i<<endl;
                 double cost = redundancyfactor * Redundancy(inputframe, outputkeyframe, inputscenepoint)+
                 CompletenessTerm(inputframe, outputkeyframe, inputscenepoint);
-                
                 cout<<"currentcost: "<<origin_cost<<endl;
-                
                 if (origin_cost - cost > difference) {
                     best_id = i;
                     difference = origin_cost - cost;
                 }
                 outputkeyframe.pop_back();
             }
-           
         }
-        
         if (best_id == -1) {
             break;
         }
         else{
             outputkeyframe.push_back(best_id);
         }
-        
         //for debug
         cout<<"size: "<<outputkeyframe.size()<<" ";
         for (int i = 0; i < outputkeyframe.size(); i++) {
             cout<<outputkeyframe[i];
         }
         cout<<endl;
-        
     }
 }
 
@@ -265,12 +272,12 @@ int countscnenpoint(const std::vector<ScenePoint>& scenepoint, int threshold){
     return  count;
 }
 
-void fakeKeyFrameSelection(std::vector<int>& keyframes){
-    int KEYFRAMES[]={9,507,729,296,1000,578,415,940,151,839,83,271,784,368,619,
-        900,960,465,392,682,198,544,347,50,633,805,885,921,114,170,666,217,485,
-        127,950,601,335,518,25,850,72,706,207,562,320,641,990,446};
-    for (int i = 0; i < 48; i++) {
-        keyframes.push_back(KEYFRAMES[i]);
+void fakeKeyFrameSelection(std::vector<int>& keyframes,string basepath){
+    int keyid;
+    fstream fobj;
+    fobj.open(basepath+"/keyframe.txt");
+    while (fobj>>keyid) {
+        keyframes.push_back(keyid);
     }
 }
 

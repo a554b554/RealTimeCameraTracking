@@ -31,10 +31,8 @@
 #include <fstream>
 
 void unionframe(const std::vector<int>& keyframes, const std::vector<int>& imgs, std::vector<int>& unionframe){
-    int tb[2000];
-    for (int i = 0; i < 2000; i++) {
-        tb[i] = 0;
-    }
+    std::vector<int> tb(2000);
+    std::fill(tb.begin(), tb.end(), 0);
     unionframe.clear();
     for (int i = 0; i < keyframes.size(); i++) {
         tb[keyframes[i]] = 1;

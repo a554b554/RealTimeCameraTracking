@@ -4,7 +4,7 @@
 
 #include <iostream>
 #include <string.h>
-
+#include <algorithm>
 
 using namespace cv;
 using namespace std;
@@ -20,6 +20,7 @@ using namespace std;
 #include "voctree2.h"
 #include <pcl/common/poses_from_matches.h>
 #include "cameraCalibration.h"
+#include <dirent.h>
 
 vector<Mat> images;
 vector<string> images_name;
@@ -28,71 +29,81 @@ vector<string> images_name;
 enum{
     MODE_CALIBRATION,
     MODE_OFFLINE,
-    MODE_ONLINE
+    MODE_ONLINE,
+    MODE_DOWNSAMPLE
 };
 
 int main(int ac, char** av) {
-    int mode = MODE_CALIBRATION;
-    const string basepath = "./mydata1";
+    
+
+    //////////////////////////////
+    int mode = MODE_ONLINE;
+    const string basepath = "./myindoor2";
     if (mode == MODE_CALIBRATION) {
         startcalibration(basepath);
         return 0;
     }
     else if (mode == MODE_OFFLINE){
-         std::vector<Frame> inputframe;
-         vector<ScenePoint> inputpoint;
-         cout<<"loading..."<<endl;
-         load(basepath, inputframe, inputpoint);
+        std::vector<Frame> inputframe;
+        vector<ScenePoint> inputpoint;
+        cout<<"loading..."<<endl;
+        load(basepath, inputframe, inputpoint);
+        computeAttribute(inputframe, inputpoint);
+        std::vector<int> keyframes;
+        KeyframeSelection(inputframe, inputpoint, keyframes);
+        savekeyframe(keyframes,basepath);
     }
     else if (mode == MODE_ONLINE){
         // load for online module.
         std::vector<Frame> keyframes;
         std::vector<ScenePoint> scenepoints;
         std::vector<int> outputkeyframe;
-        fakeKeyFrameSelection(outputkeyframe);
-        load2("./campusSFM/campusdata.nvm", keyframes, scenepoints,outputkeyframe);
+        fakeKeyFrameSelection(outputkeyframe,basepath);
+        load2(basepath, keyframes, scenepoints,outputkeyframe);
         //showallframe(keyframes);
         computeAttribute2(keyframes, scenepoints);
-        
-        
         //begin online module
         node root;
         VocTree tree(keyframes, scenepoints, root);
+        tree.loadCameraMatrix(basepath);
         tree.init(10, 5);
-        
+        std::vector<string> filelist;
+        loadonlineimglist(basepath, filelist);
+        sort(filelist.begin(), filelist.end());
         namedWindow("show");
-        int count = 100;
-        while(1){
+        for (int i = 0; i < filelist.size(); i++) {
             std::vector<int> candi;
-            
-            Mat test = imread("./campusSFM/0"+toString(count)+".jpg");
-            imshow("a",test);
-            count++;
+            Mat test = imread(basepath+"/online/"+filelist[i]);
             if (test.empty()) {
                 break;
             }
+            imshow("a",test);
             Frame t_frame;
             tree.cvtFrame(test, t_frame);
             tree.candidateKeyframeSelection(t_frame, candi, 4);
-            /*candi.push_back(18);
-             candi.push_back(45);
-             candi.push_back(38);
-             candi.push_back(40);*/
-            std::vector<DMatch> match;
+            std::vector<std::vector<DMatch>> matches(candi.size());
+            tree.matching(candi, t_frame, matches);
+         //   tree.ordinarymatching(candi, t_frame, matches);
+            Mat rvec,tvec,outimg;
+            tree.calibrate(t_frame, matches, candi, rvec, tvec);
+            tree.rendering(t_frame, rvec, tvec, outimg);
+            
+            waitKey(30);
+        }
+            /*std::vector<DMatch> match;
             int64 t0 = getTickCount();
             tree.matching(candi, t_frame, match);
             cout<<"matching cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
-            
             t0 = getTickCount();
             Mat rvec,tvec;
             tree.calibrate(t_frame, match, rvec, tvec);
             cout<<"calibration cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
-            
             t0 = getTickCount();
             Mat show;
             tree.rendering(t_frame, rvec, tvec, show);
-            cout<<"rendering cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
-            
+            cout<<"rendering cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;*/
+        
+        
             /*imshow("orin", test);
              for (int i = 0; i < candi.size(); i++) {
              string name;
@@ -101,6 +112,24 @@ int main(int ac, char** av) {
              }*/
             waitKey(0);
             //  destroyWindow("show");
+        
+    }
+    else if (mode == MODE_DOWNSAMPLE){
+        DIR *dir;
+        struct dirent *ent;
+        string path = basepath+"/origindata/offline";
+        if ((dir = opendir(path.c_str())) != NULL) {
+            while ((ent = readdir(dir)) != NULL) {
+                string imgpath(ent->d_name);
+                imgpath = path+"/"+imgpath;
+                string filename(ent->d_name);
+                Mat tmp = imread(imgpath);
+                if (tmp.empty()) {
+                    continue;
+                }
+                resize(tmp, tmp, Size(640,360));
+                imwrite(basepath+"/offline/"+filename, tmp);
+            }
         }
     }
     return 0;

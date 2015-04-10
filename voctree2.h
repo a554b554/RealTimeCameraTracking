@@ -46,10 +46,14 @@ public:
     void frameinNode(const node& _node, std::vector<int>& frames);// calculate the spanned frames in _node.
     void updateloc();
     void cvtFrame(const Mat& img, Frame& fm);
-    void matching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<DMatch>& matches);
+    void matching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
     
-    void calibrate(const Frame& onlineframe, const std::vector<DMatch>& matches, Mat& rvec, Mat& tvec);
+    void calibrate(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches,const std::vector<int>& candidateframe, Mat& rvec, Mat& tvec);
     void rendering(const Frame& onlineframe, const Mat& rvec, const Mat& tvec, Mat& outputimg);
+    void loadCameraMatrix(const string basepath);
+    void ordinarymatching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
+    bool refineMatchesWithHomography(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches, std::vector<Mat>& Fundamental);
+    void showmatch(const std::vector<int>& candidateframe, const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
     
 private:
     std::vector<Frame> keyframes;
@@ -59,9 +63,10 @@ private:
     FlannBasedMatcher matcher;
     cv::flann::Index kdtree;
     std::vector< std::vector<int> > loc; //loc[j][i] = k means descriptor i is in the kth node in level j.
+    Mat intrinsic,distCoeffs;
+    double squareSize;
+    void drawAR(void* param);
 };
-
-
 
 struct box{
     int idx;
