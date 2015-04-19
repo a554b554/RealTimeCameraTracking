@@ -18,7 +18,9 @@
 #include "ScenePoint.h"
 #include "Frame.h"
 #include <opencv2/nonfree/features2d.hpp>
+#include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
+#include "ARDrawingContext.h"
 
 class node{
 public:
@@ -26,6 +28,7 @@ public:
     double weight;
     std::vector<node*> child;
     std::vector<int> frames;
+    Mat des;
 };
 
 
@@ -33,29 +36,36 @@ class VocTree{
 public:
     VocTree(const std::vector<Frame>& keyframes, const std::vector<ScenePoint>& scenepoints,const node& root):keyframes(keyframes),scenepoints(scenepoints){};
     node root;
+    Frame lastframe;
     void dokmeans(node& _node, int branch);
     void construct(node& _node, int branch, int level);
     void init(int branch, int level);
     Mat alldescriptor;
-    
     int getFrameIDbyDesID(int descriptor_id);
     void updateweight(node& _node);
     int spannedFrames(const node& _node);
     void candidateKeyframeSelection(const Frame& liveframe, std::vector<int>& candidateframe, int K);
+    void candidateKeyframeSelection2(const Frame& liveframe, std::vector<int>& candidateframe, int K);
     int featureinNodeandFrame(const node& _node, int frame_id);// the number of superior feature in keyframes[frame_id] that are clustered under _node.
     void frameinNode(const node& _node, std::vector<int>& frames);// calculate the spanned frames in _node.
     void updateloc();
     void cvtFrame(const Mat& img, Frame& fm);
-    void matching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
+    bool twoPassMatching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
     
-    void calibrate(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches,const std::vector<int>& candidateframe, Mat& rvec, Mat& tvec);
+    bool calibrate(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches,const std::vector<int>& candidateframe, Mat& rvec, Mat& tvec);
     void rendering(const Frame& onlineframe, const Mat& rvec, const Mat& tvec, Mat& outputimg);
     void loadCameraMatrix(const string basepath);
-    void ordinarymatching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
+    bool ordinarymatching(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
     bool refineMatchesWithHomography(const std::vector<int>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches, std::vector<Mat>& Fundamental);
-    void showmatch(const std::vector<int>& candidateframe, const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
-    
+    void showmatch(const std::vector<int>& candidateframe, const string windowname, const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
+    void draw(const string windowname, const Frame& onlineframe, const Mat& rvec, const Mat& tvec, Mat& outputimg);
+    void initlastframe(std::vector<int>& candidateframe);
+    void updatelastframe(Frame& onlineframe);
+    void matchlast(Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
+    void updatematchingInfo(const std::vector<int> candidateframe ,Frame& onlineframe,std::vector<std::vector<DMatch>>& matches);
+    int framesize();
 private:
+    
     std::vector<Frame> keyframes;
     std::vector<ScenePoint> scenepoints;
     std::vector<int> sizeofdescriptor;
@@ -66,6 +76,7 @@ private:
     Mat intrinsic,distCoeffs;
     double squareSize;
     void drawAR(void* param);
+    void featurematch(const Frame& keyframe, const Frame& onlineframe, std::vector<DMatch>& m_match);
 };
 
 struct box{

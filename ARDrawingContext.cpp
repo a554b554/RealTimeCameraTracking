@@ -1,4 +1,4 @@
-//
+ //
 //  ARDrawingContext.cpp
 //  RCT
 //
@@ -9,6 +9,7 @@
 #include "ARDrawingContext.h"
 #include <OpenGL/gl.h>
 
+
 void ARDrawingContextDrawCallback(void* param){
     ARDrawingContext* ctx = static_cast<ARDrawingContext*>(param);
     if (ctx) {
@@ -16,7 +17,7 @@ void ARDrawingContextDrawCallback(void* param){
     }
 }
 
-ARDrawingContext::ARDrawingContext(const string windowname ,const Mat& intrinsic, const Mat& rvec, const Mat& tvec):textureInitialized(false),intrinsic(intrinsic),rvec(rvec),tvec(tvec)
+ARDrawingContext::ARDrawingContext(const string windowname ,const Mat& intrinsic, const Mat& rvec, const Mat& tvec,const Frame& onlineframe):textureInitialized(false),intrinsic(intrinsic),rvec(rvec),tvec(tvec),onlineframe(onlineframe)
 {
     ARWindowName = windowname;
     cv::namedWindow(windowname, cv::WINDOW_OPENGL);

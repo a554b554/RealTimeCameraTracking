@@ -21,6 +21,7 @@ using namespace std;
 #include <pcl/common/poses_from_matches.h>
 #include "cameraCalibration.h"
 #include <dirent.h>
+#include <fstream>
 
 vector<Mat> images;
 vector<string> images_name;
@@ -30,15 +31,15 @@ enum{
     MODE_CALIBRATION,
     MODE_OFFLINE,
     MODE_ONLINE,
-    MODE_DOWNSAMPLE
+    MODE_DOWNSAMPLE,
+    MODE_TEST
 };
 
 int main(int ac, char** av) {
     
-
     //////////////////////////////
     int mode = MODE_ONLINE;
-    const string basepath = "./myindoor2";
+    const string basepath = "./smallindoor";
     if (mode == MODE_CALIBRATION) {
         startcalibration(basepath);
         return 0;
@@ -71,7 +72,9 @@ int main(int ac, char** av) {
         loadonlineimglist(basepath, filelist);
         sort(filelist.begin(), filelist.end());
         namedWindow("show");
+        Mat odR,odT;
         for (int i = 0; i < filelist.size(); i++) {
+            int64 t1 = getTickCount();
             std::vector<int> candi;
             Mat test = imread(basepath+"/online/"+filelist[i]);
             if (test.empty()) {
@@ -80,15 +83,21 @@ int main(int ac, char** av) {
             imshow("a",test);
             Frame t_frame;
             tree.cvtFrame(test, t_frame);
-            tree.candidateKeyframeSelection(t_frame, candi, 4);
+            tree.candidateKeyframeSelection2(t_frame, candi, 4);
             std::vector<std::vector<DMatch>> matches(candi.size());
-            tree.matching(candi, t_frame, matches);
-         //   tree.ordinarymatching(candi, t_frame, matches);
-            Mat rvec,tvec,outimg;
+            bool isgood = false;
+            isgood = tree.twoPassMatching(candi, t_frame, matches);
+            //isgood = tree.ordinarymatching(candi, t_frame, matches);
+            Mat rvec,tvec,outimg,out2;
             tree.calibrate(t_frame, matches, candi, rvec, tvec);
             tree.rendering(t_frame, rvec, tvec, outimg);
+            cout<<isgood<<endl;
             
-            waitKey(30);
+            
+            cout<<"fps: "<<getTickFrequency()/(getTickCount() - t1)<<endl;
+           
+     
+            waitKey(1);
         }
             /*std::vector<DMatch> match;
             int64 t0 = getTickCount();
@@ -117,7 +126,7 @@ int main(int ac, char** av) {
     else if (mode == MODE_DOWNSAMPLE){
         DIR *dir;
         struct dirent *ent;
-        string path = basepath+"/origindata/offline";
+        string path = basepath+"/origindata/";
         if ((dir = opendir(path.c_str())) != NULL) {
             while ((ent = readdir(dir)) != NULL) {
                 string imgpath(ent->d_name);
@@ -130,6 +139,15 @@ int main(int ac, char** av) {
                 resize(tmp, tmp, Size(640,360));
                 imwrite(basepath+"/offline/"+filename, tmp);
             }
+        }
+    }
+    else if (mode == MODE_TEST){
+        fstream ff;
+        ff.open("0000.sift");
+        char b;
+        while(1){
+            ff >> b;
+            cout<<b;
         }
     }
     return 0;

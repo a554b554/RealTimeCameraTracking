@@ -129,12 +129,18 @@ void drawmatch2(Frame& frame1, Frame& frame2, string windowname){
     waitKey(0);
 }
 
-
+inline bool isgood(Point2f p1, Point2f p2){
+    if (fabs(p1.x-p2.x)<0.3&&fabs(p1.y-p2.y)<0.3) {
+        return true;
+    }
+    return false;
+}
 
 void computekeypoint(Frame& frame, const vector<Point2f>& point){
-    SiftFeatureDetector detector;
-    vector<KeyPoint> kpt;
+    SiftFeatureDetector detector(2000);
+    vector<KeyPoint> kpt,ktmp;
     detector.detect(frame.img, kpt);
+    frame.keypoint.clear();
     //cout<<"pointsize: "<<point.size()<<endl;
     Mat data,querydata;
     data.create((int)kpt.size(), 2, CV_32F);
@@ -147,16 +153,36 @@ void computekeypoint(Frame& frame, const vector<Point2f>& point){
         querydata.at<float>(i,0) = point[i].x;
         querydata.at<float>(i,1) = point[i].y;
     }
-    FlannBasedMatcher matcher;
-    vector<DMatch> matches;
+    BFMatcher matcher;
+    //FlannBasedMatcher matcher;
+    vector<DMatch> matches,gmatch;
     matcher.match(querydata, data, matches);
+    
+    for (int i = 0; i < point.size(); i++) {
+        KeyPoint pp(point[i], 1);
+        ktmp.push_back(pp);
+    }
+    /*drawMatches(frame.img, ktmp, frame.img, kpt, matches, data);
+    imshow("before", data);
+    waitKey(0);
+    */
     for (int i = 0; i < point.size(); i++) {
         frame.keypoint.push_back(kpt[matches[i].trainIdx]);
-        if (matches[i].distance >= 1) {
+        if (matches[i].distance >= 0.5 && !isgood(kpt[matches[i].trainIdx].pt , point[matches[i].queryIdx])){
             frame.keypoint[frame.keypoint.size()-1].class_id = 0;
         }
+        else{
+            gmatch.push_back(matches[i]);
+        }
     }
+    /*drawMatches(frame.img, ktmp, frame.img, kpt, gmatch, data);
+    imshow("after", data);
+    waitKey(0);
+    */
+
 }
+
+
 
 /*void computekeypoint(Frame& frame, std::vector<Point2f> & point){
     SiftFeatureDetector detector;
@@ -563,11 +589,12 @@ void computeAttribute2(std::vector<Frame>& globalframe, std::vector<ScenePoint>&
       //  globalframe[i].kdtree.build(globalframe[i].descriptor, indexParams, cvflann::FLANN_DIST_L2);
         //train feature descriptor
          Frame* curr = &globalframe[i];
-         curr->d_matcher.clear();
+         curr->d_matcher = new FlannBasedMatcher();
+        // curr->d_matcher->clear();
          std::vector<Mat> des(1);
          des[0] = curr->descriptor.clone();
-         curr->d_matcher.add(des);
-         curr->d_matcher.train();
+         curr->d_matcher->add(des);
+         curr->d_matcher->train();
     }
     gettime(t0);
     

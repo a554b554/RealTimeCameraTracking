@@ -26,7 +26,7 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/nonfree/ocl.hpp>
 
-
+void computekeypoint(Frame& frame, const vector<Point2f>& point);
 void load(const string basepath, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 void load2(const string filename, std::vector<Frame>& keyframes, std::vector<ScenePoint>& scenepoints, const std::vector<int>& key);
 

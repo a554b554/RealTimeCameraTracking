@@ -16,7 +16,7 @@
 #include <GLUT/GLUT.h>
 class ARDrawingContext{
 public:
-    ARDrawingContext(const string windowname ,const Mat& intrinsic, const Mat& rvec, const Mat& tvec);
+    ARDrawingContext(const string windowname ,const Mat& intrinsic, const Mat& rvec, const Mat& tvec,const Frame& onlineframe);
     cv::Mat intrinsic;
     cv::Mat rvec;
     cv::Mat tvec;

@@ -32,7 +32,7 @@ public:
     vector<int> scenepoint; // the index of all scenepoint in this frame
     vector<int> featuredensity; // the density of each keypoint
     cv::flann::Index kdtree;
-    FlannBasedMatcher d_matcher;
+    FlannBasedMatcher* d_matcher;
 private:
 };
 

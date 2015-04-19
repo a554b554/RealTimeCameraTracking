@@ -224,7 +224,7 @@ bool frameisinframeset(const std::vector<int>& frameset, const int frameid){
 
 void KeyframeSelection(const std::vector<Frame>& inputframe, const std::vector<ScenePoint>& inputscenepoint
                        ,std::vector<int>& outputkeyframe){
-    const double redundancyfactor = 0.005;
+    const double redundancyfactor = 0.001;
     while (1) {
         double origin_cost = redundancyfactor * Redundancy(inputframe, outputkeyframe, inputscenepoint)+
         CompletenessTerm(inputframe, outputkeyframe, inputscenepoint);
