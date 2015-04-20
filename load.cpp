@@ -585,12 +585,9 @@ void computeAttribute2(std::vector<Frame>& globalframe, std::vector<ScenePoint>&
     SiftDescriptorExtractor extractor;
     for (int i = 0; i < globalframe.size(); i++) {
         extractor.compute(globalframe[i].img, globalframe[i].keypoint, globalframe[i].descriptor);
-    //    cv::flann::KDTreeIndexParams indexParams(5);
-      //  globalframe[i].kdtree.build(globalframe[i].descriptor, indexParams, cvflann::FLANN_DIST_L2);
         //train feature descriptor
          Frame* curr = &globalframe[i];
          curr->d_matcher = new FlannBasedMatcher();
-        // curr->d_matcher->clear();
          std::vector<Mat> des(1);
          des[0] = curr->descriptor.clone();
          curr->d_matcher->add(des);
@@ -607,4 +604,24 @@ void loadonlineimglist(const string basepath, std::vector<string>& filename){
     while (fobj>>fn) {
         filename.push_back(fn);
     }
+}
+
+void showmatches(const Frame& keyframe, const Frame& onlineframe, const std::vector<DMatch>& matches){
+    Mat tmp;
+    drawMatches(onlineframe.img, onlineframe.keypoint, keyframe.img, keyframe.keypoint, matches, tmp);
+   // cout<<"matched: "<<matches.size()<<endl;
+    imshow("match", tmp);
+    waitKey(0);
+}
+
+
+void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches){
+    Mat tmp;
+    tmp = onlineframe.img.clone();
+    for (int i = 0; i < matches.size(); i++) {
+        for (int j = 0; j < matches[i].size(); j++) {
+            circle(tmp, onlineframe.keypoint[matches[i][j].queryIdx].pt, 3, CV_RGB(0, 255, 0),2);
+        }
+    }
+    imshow("matched point", tmp);
 }

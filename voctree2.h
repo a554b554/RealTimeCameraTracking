@@ -21,7 +21,6 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/calib3d/calib3d.hpp>
 #include "ARDrawingContext.h"
-
 class node{
 public:
     std::vector<int> descriptor_id;
@@ -76,7 +75,10 @@ private:
     Mat intrinsic,distCoeffs;
     double squareSize;
     void drawAR(void* param);
-    void featurematch(const Frame& keyframe, const Frame& onlineframe, std::vector<DMatch>& m_match);
+    bool featurematch(const Frame& keyframe, const Frame& onlineframe, const int featureID, std::vector<DMatch>& m_match);
+    bool epipolarmatch(const Frame& keyframe, const Frame& onlineframe, const int featureID, const Mat& fundamental, std::vector<DMatch>& m_match);
+    bool refinewithFundamental(const Frame& keyframe, const Frame& onlineframe, std::vector<DMatch>& m_match, Mat& fundamental);
+    int matchsize(const std::vector<std::vector<DMatch>>& matches);
 };
 
 struct box{

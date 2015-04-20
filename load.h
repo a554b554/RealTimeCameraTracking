@@ -51,4 +51,6 @@ string toString(int a);
 void meanMat(const std::vector<Mat>& inputmat, Mat& output);
 void gettime(int64& t0);
 void showallframe(const std::vector<Frame>& frameset);
+void showmatches(const Frame& keyframe, const Frame& onlineframe, const std::vector<DMatch>& matches);
+void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
 #endif /* defined(__RCT__load__) */

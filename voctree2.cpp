@@ -361,7 +361,9 @@ float distP2L(Point2f pt, Point3f line){
 bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onlineframe, std::vector<std::vector<DMatch>>& matches){
     //sort keypoint by DoG strength
     //std::sort(onlineframe.keypoint.begin(), onlineframe.keypoint.end(), kptsort);
+    const int minNumofTrack = 50;
     std::vector<box> boxes(64);
+    int c_size = (int)candidateframe.size();
     for (int i = 0; i < boxes.size(); i++) {
         boxes[i].idx = i;
         boxes[i].count = 0;
@@ -382,124 +384,77 @@ bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onl
     //step1: set c1(xj) and c2(xj) to 0.
     std::vector<int> c1(onlineframe.keypoint.size());
     std::vector<int> c2(onlineframe.keypoint.size());
-    std::vector<int> matchedbox(boxes.size());
     std::fill(c1.begin(), c1.end(), 0);
     std::fill(c2.begin(), c2.end(), 0);
-    std::fill(matchedbox.begin(), matchedbox.end(), 0);
     
-    //step2: perform feature matching.
-    std::vector<std::vector<std::vector<DMatch>>> m_result(candidateframe.size());
-    for (int i = 0; i < candidateframe.size(); i++) {
-        std::vector<std::vector<DMatch>> m_matches;
-        //FlannBasedMatcher mm;
-        Frame* currFrame = &keyframes[candidateframe[i]];
-        //mm.knnMatch(onlineframe.descriptor, currFrame->descriptor, m_matches, 10);
-        currFrame->d_matcher->knnMatch(onlineframe.descriptor, m_matches, 10);
-        m_result.push_back(m_matches);
-    }
-    
-    const int minNumberofMatches = 70;
-    int64 tt = getTickCount();
-    while(1){
-        //step 3: perform the first-pass match.
+    while (1) {
+        //step2: perform first-pass matching.
         for (int i = 0; i < boxes.size(); i++) {
             for (int j = 0; j < boxes[i].descriptor.size(); j++) {
-                bool flag = false;
                 int desID = boxes[i].descriptor[j];
                 if (c1[desID] == 0) {
                     c1[desID] = 1;
-                    for (int k = 0; k < candidateframe.size(); k++) {
-                        DMatch bestmatch = m_result[k][desID][0];
-                        DMatch bettermatch = m_result[k][desID][1];
-                        float distRatio = bestmatch.distance/bettermatch.distance;
-                        if (distRatio < 0.7) {
-                            matches[k].push_back(bestmatch);
-                            flag = true;
+                    bool goodmatch = false;
+                    for (int k = 0; k < c_size; k++) {
+                        const Frame* k_frame = &keyframes[candidateframe[k]];
+                        goodmatch = featurematch(*k_frame, onlineframe, desID, matches[k]);
+                        if (goodmatch) {
                             break;
                         }
                     }
-                }
-                if (flag) { //if find match, stop the matching of Bi.
-                    break;
-                }
-            }
-        }
-      
-       
-       // showmatch(candidateframe, onlineframe, matches);
-        //step4: use fundamental matrix to remove outlier.
-        std::vector<Mat> fundamental(candidateframe.size());
-        refineMatchesWithHomography(candidateframe, onlineframe, matches, fundamental);
-       // showmatch(candidateframe, onlineframe, matches);
-       //if there are already N inliers.
-        std::set<int> _set;
-        for (int i = 0; i < matches.size(); i++) {
-            for (int j = 0; j < matches[i].size(); j++) {
-                _set.insert(matches[i][j].queryIdx);
-            }
-        }
-       //s cout<<"first match: "<<_set.size()<<endl;
-        if (_set.size() >= minNumberofMatches) {
-            break; //stop matching.
-        }
-        //step 5: perform second-pass matching.
-        for (int i = 0; i < boxes.size(); i++) {
-            for (int j = 0; j < boxes[i].descriptor.size(); j++) {
-                int desID = boxes[i].descriptor[j];
-                if (c1[desID] == 1) {
-                    if (c2[desID] == 0) {
-                        c2[desID] = 1;
-                        for (int k = 0; k < candidateframe.size(); k++) {
-                            if (fundamental[k].empty()) {
-                                continue;
-                            }
-                            std::vector<Point2f> imgpt(1);
-                            std::vector<Point3f> line(1);
-                            imgpt[0] = onlineframe.keypoint[desID].pt;
-                            computeCorrespondEpilines(imgpt, 1, fundamental[k], line);
-                            //cout<<line[0]<<endl;
-                            if (line[0].x == 0&&line[0].y==0) {//check if the line is valid.
-                                continue;
-                            }
-                            for (int q = 0; q < m_result[k].size(); q++) {
-                                std::vector<DMatch> candidateMatch;
-                                for (int p = 0; p < m_result[k][q].size(); p++) {
-                                    if (distP2L(keyframes[candidateframe[k]].keypoint[m_result[k][q][p].trainIdx].pt, line[0]) < 2) {
-                                        candidateMatch.push_back(m_result[k][q][p]);
-                                    }
-                                    if (candidateMatch.size() >= 2) {
-                                        break;
-                                    }
-                                }
-                                if (candidateMatch.size()<2) {
-                                    continue;
-                                }
-                                float distRatio = candidateMatch[0].distance/candidateMatch[1].distance;
-                                if (distRatio < 0.7 && candidateMatch[0].distance<150) {
-                                    matches[k].push_back(candidateMatch[0]);
-                                }
-                            }
-                        }
+                    if (goodmatch) { //if xj satisfies the 2NN heuristic, stop matching of Bi.
+                        break;
                     }
                 }
             }
         }
-        //showmatch(candidateframe, "before",onlineframe, matches);
-        refineMatchesWithHomography(candidateframe, onlineframe, matches, fundamental);
-        //showmatch(candidateframe, "after",onlineframe, matches);
-        _set.clear();
-        for (int i = 0; i < matches.size(); i++) {
-            for (int j = 0; j < matches[i].size(); j++) {
-                _set.insert(matches[i][j].queryIdx);
-            }
+        //step3: estimate fundamental
+        std::vector<Mat> fundamental(c_size);
+        for (int i = 0; i < c_size; i++) {
+            const Frame* k_frame = &keyframes[candidateframe[i]];
+            refinewithFundamental(*k_frame, onlineframe, matches[i], fundamental[i]);
         }
-        if (_set.size()>minNumberofMatches) {
+        if (matchsize(matches) > minNumofTrack) { //if there are already N inlier
             break;
         }
-        //if all feature has matched.
+        for (int i = 0; i < c_size; i++) {
+            showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
+        }
+        drawmatchedpoint(onlineframe, matches);
+        cout<<"first match: "<<matchsize(matches)<<endl;
+        waitKey(0);
+        
+        //step4: perform second-pass matching
+        for (int i = 0; i < boxes.size(); i++) {
+            for (int j = 0; j < boxes[i].descriptor.size(); j++) {
+                int desID = boxes[i].descriptor[j];
+                if (c1[desID] == 1 && c2[desID] == 0) {
+                    c2[desID] = 1;
+                    bool goodmatch = false;
+                    for (int k = 0; k < c_size; k++) {
+                        if (!fundamental[k].empty()) {
+                            goodmatch = epipolarmatch(keyframes[candidateframe[k]], onlineframe, desID, fundamental[k], matches[k]);
+                        }
+                        if (goodmatch) {
+                            break;
+                        }
+                    }
+                    if (goodmatch) {
+                        break;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < c_size; i++) {
+            showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
+        }
+        cout<<"second match: "<<matchsize(matches)<<endl;
+        if (matchsize(matches) > minNumofTrack) {
+            break;
+        }
         bool breakflag = true;
-        for (int i = 0; i < c1.size(); i++) {
-            if (c1[i]==0||c2[i]==0) {
+        for (int i = 0; i < onlineframe.keypoint.size(); i++) {
+            if (c1[i] == 0||c2[i] == 0) {
                 breakflag = false;
             }
         }
@@ -507,20 +462,86 @@ bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onl
             break;
         }
     }
-    Mat tmp;
-    tmp = onlineframe.img.clone();
+    return matchsize(matches) > minNumofTrack;
+}
+
+bool VocTree::epipolarmatch(const Frame &keyframe, const Frame &onlineframe, const int featureID, const Mat& fundamental,std::vector<DMatch> &m_match){
+    std::vector<std::vector<DMatch>> tmp;
+    keyframe.d_matcher->knnMatch(onlineframe.descriptor.row(featureID), tmp, 10);
+    std::vector<Point2f> points(1);
+    std::vector<Point3f> line(1);
+    points[0] = onlineframe.keypoint[featureID].pt;
+    computeCorrespondEpilines(points, 2, fundamental, line);
+    std::vector<DMatch> goodmatches;
+    Point3f _l = line[0];
+    for (int i = 0; i < tmp[0].size(); i++) {
+        Point2f pt = onlineframe.keypoint[tmp[0][i].trainIdx].pt;
+        if (_l.x*pt.x+_l.y*pt.y+_l.z <= 2) {
+            goodmatches.push_back(tmp[0][i]);
+        }
+        if (goodmatches.size() >= 2) {
+            break;
+        }
+    }
+    if (goodmatches.size() < 2) {
+        return false;
+    }
+    DMatch bestmatch = goodmatches[0];
+    DMatch bettermatch = goodmatches[1];
+    if (bestmatch.distance/bettermatch.distance < 0.7 && bestmatch.distance < 100) {
+        bestmatch.queryIdx = featureID;
+        m_match.push_back(bestmatch);
+        return true;
+    }
+    return false;
+}
+
+bool VocTree::featurematch(const Frame &keyframe, const Frame &onlineframe, const int featureID, std::vector<DMatch> &m_match){
+    vector<vector<DMatch>> tmp;
+    keyframe.d_matcher->knnMatch(onlineframe.descriptor.row(featureID), tmp, 2);
+    DMatch bestmatch = tmp[0][0];
+    DMatch bettermatch = tmp[0][1];
+    const float maxRatio = 0.7;
+    if (bestmatch.distance/bettermatch.distance < maxRatio) {
+        bestmatch.queryIdx = featureID;
+        m_match.push_back(bestmatch);
+        return true;
+    }
+    return false;
+}
+
+int VocTree::matchsize(const std::vector<std::vector<DMatch> > &matches){
     std::set<int> _set;
     for (int i = 0; i < matches.size(); i++) {
         for (int j = 0; j < matches[i].size(); j++) {
-            circle(tmp, onlineframe.keypoint[matches[i][j].queryIdx].pt, 3.5, CV_RGB(0, 255, 0),-1,8,0);
             _set.insert(matches[i][j].queryIdx);
         }
     }
-    imshow("matched", tmp);
-    cout<<"final matches: "<<" "<<_set.size()<<endl;
-    cout<<"time for feature matching: "<<(getTickCount()-tt)/getTickFrequency()<<endl;
-    showmatch(candidateframe, "final match",onlineframe, matches);
-    return _set.size()>50?true:false;
+    return (int)_set.size();
+}
+
+bool VocTree::refinewithFundamental(const Frame &keyframe, const Frame &onlineframe, std::vector<DMatch> &m_match, Mat& fundamental){
+    const int minNumberAllow = 7;
+    if (m_match.size() < minNumberAllow) {
+        m_match.clear();
+        return false;
+    }
+    std::vector<Point2f> srcPt(m_match.size());
+    std::vector<Point2f> dstPt(m_match.size());
+    for (size_t i = 0; i < m_match.size(); i++) {
+        srcPt[i] = keyframe.keypoint[m_match[i].trainIdx].pt;
+        dstPt[i] = onlineframe.keypoint[m_match[i].queryIdx].pt;
+    }
+    std::vector<uchar> inlierMask(srcPt.size());
+    fundamental = findFundamentalMat(srcPt, dstPt, FM_RANSAC, 1.0 , 0.99, inlierMask);
+    std::vector<DMatch> inliers;
+    for (size_t i = 0; i < inlierMask.size(); i++) {
+        if (inlierMask[i]) {
+            inliers.push_back(m_match[i]);
+        }
+    }
+    m_match.swap(inliers);
+    return m_match.size() > minNumberAllow;
 }
 
 void VocTree::updatematchingInfo(const std::vector<int> candidateframe, Frame&onlineframe, std::vector<std::vector<DMatch>> &matches){

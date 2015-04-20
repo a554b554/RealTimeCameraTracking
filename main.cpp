@@ -9,8 +9,7 @@
 using namespace cv;
 using namespace std;
 
-
-
+#include <thread>
 #include "OfflineModule.h"
 #include "load.h"
 #include "VocabularyTree.h"
@@ -36,6 +35,7 @@ enum{
 };
 
 int main(int ac, char** av) {
+    
     
     //////////////////////////////
     int mode = MODE_ONLINE;
@@ -76,7 +76,7 @@ int main(int ac, char** av) {
         for (int i = 0; i < filelist.size(); i++) {
             int64 t1 = getTickCount();
             std::vector<int> candi;
-            Mat test = imread(basepath+"/online/"+filelist[i]);
+            Mat test = imread(basepath+"/online/"+filelist[1]);
             if (test.empty()) {
                 break;
             }
@@ -84,9 +84,16 @@ int main(int ac, char** av) {
             Frame t_frame;
             tree.cvtFrame(test, t_frame);
             tree.candidateKeyframeSelection2(t_frame, candi, 4);
+            candi[0] = 0;
+            candi[1] = 1;
+            candi[2] = 2;
+            candi[3] = 3;
             std::vector<std::vector<DMatch>> matches(candi.size());
             bool isgood = false;
             isgood = tree.twoPassMatching(candi, t_frame, matches);
+            if(!isgood){
+                continue;
+            }
             //isgood = tree.ordinarymatching(candi, t_frame, matches);
             Mat rvec,tvec,outimg,out2;
             tree.calibrate(t_frame, matches, candi, rvec, tvec);
