@@ -39,7 +39,7 @@ int main(int ac, char** av) {
     
     //////////////////////////////
     int mode = MODE_ONLINE;
-    const string basepath = "./smallindoor";
+    const string basepath = "./desktop";
     if (mode == MODE_CALIBRATION) {
         startcalibration(basepath);
         return 0;
@@ -73,37 +73,36 @@ int main(int ac, char** av) {
         sort(filelist.begin(), filelist.end());
         namedWindow("show");
         Mat odR,odT;
+        int ct = 0;
         for (int i = 0; i < filelist.size(); i++) {
             int64 t1 = getTickCount();
             std::vector<int> candi;
-            Mat test = imread(basepath+"/online/"+filelist[1]);
+            Mat test = imread(basepath+"/online/"+filelist[i]);
             if (test.empty()) {
                 break;
             }
-            imshow("a",test);
+        
+            //imshow("a",test);
             Frame t_frame;
             tree.cvtFrame(test, t_frame);
             tree.candidateKeyframeSelection2(t_frame, candi, 4);
-            candi[0] = 0;
-            candi[1] = 1;
-            candi[2] = 2;
-            candi[3] = 3;
+            cout<<"Frame: "<<i<<endl;
+            printmatchinfo(candi);
             std::vector<std::vector<DMatch>> matches(candi.size());
-            bool isgood = false;
-            isgood = tree.twoPassMatching(candi, t_frame, matches);
-            if(!isgood){
+            std::vector<std::vector<DMatch>> poolmatches(tree.onlinepool.size());
+            tree.twoPassMatching(candi, t_frame, matches);
+            tree.matchWithOnlinepool(t_frame, poolmatches);
+            if(tree.matchsize(matches)<25&&tree.matchsize(poolmatches)<25){
                 continue;
             }
-            //isgood = tree.ordinarymatching(candi, t_frame, matches);
-            Mat rvec,tvec,outimg,out2;
-            tree.calibrate(t_frame, matches, candi, rvec, tvec);
+           // isgood = tree.ordinarymatching(candi, t_frame, matches);
+            Mat rvec,tvec,outimg,out2,rv2,tv2;
+            tree.calibrate(t_frame, matches, candi, poolmatches, rvec, tvec);
             tree.rendering(t_frame, rvec, tvec, outimg);
-            cout<<isgood<<endl;
-            
-            
+            imwrite(basepath+"/output/"+toString(ct)+".jpg", outimg);
+            ct++;
+            tree.updateonlinepool(candi, matches, poolmatches, t_frame);
             cout<<"fps: "<<getTickFrequency()/(getTickCount() - t1)<<endl;
-           
-     
             waitKey(1);
         }
             /*std::vector<DMatch> match;
@@ -144,6 +143,7 @@ int main(int ac, char** av) {
                     continue;
                 }
                 resize(tmp, tmp, Size(640,360));
+                //rotateimg(tmp);
                 imwrite(basepath+"/offline/"+filename, tmp);
             }
         }

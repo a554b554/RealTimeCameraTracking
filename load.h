@@ -33,7 +33,7 @@ void load2(const string filename, std::vector<Frame>& keyframes, std::vector<Sce
 
 void computeAttribute(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 void computeAttribute2(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
-
+void rotateimg(Mat& img);
 
 void calculateDescriptor(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 
@@ -52,5 +52,8 @@ void meanMat(const std::vector<Mat>& inputmat, Mat& output);
 void gettime(int64& t0);
 void showallframe(const std::vector<Frame>& frameset);
 void showmatches(const Frame& keyframe, const Frame& onlineframe, const std::vector<DMatch>& matches);
+void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches1, const std::vector<std::vector<DMatch>>& matches2);
 void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
+
+void printmatchinfo(const std::vector<int> candi);
 #endif /* defined(__RCT__load__) */

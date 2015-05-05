@@ -26,19 +26,14 @@ void VocTree::construct(node& _node, int branch, int level){
 
 void VocTree::init(int branch, int level){
     //build descriptor index vector
-    sizeofdescriptor.push_back(0);
     for (int i = 0; i < keyframes.size(); i++) {
         Frame* curr = &keyframes[i];
         alldescriptor.push_back(curr->descriptor);
-        sizeofdescriptor.push_back(curr->descriptor.rows);
+        for (int j = 0; j < curr->descriptor.rows; j++) {
+            frameid.push_back(i);
+        }
     }
-    
-    int range = 0;
-    for (int i = 0; i < sizeofdescriptor.size(); i++) {
-        range += sizeofdescriptor[i];
-        rangeofdescriptor.push_back(range);
-    }
-    
+
     //build root node
     for (int i = 0; i < alldescriptor.rows; i++) {
         root.descriptor_id.push_back(i);
@@ -54,26 +49,25 @@ void VocTree::init(int branch, int level){
     cout<<"updating complete!"<<endl;
     std::cout<<"time cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
     
-    t0 = getTickCount();
-    cout<<"updataloc..."<<endl;
-    updateloc();
-    cout<<"updating complete!"<<endl;
-    std::cout<<"time cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
-    
-    cv::flann::KDTreeIndexParams indexParams(5);
-    kdtree.build(alldescriptor, indexParams);
+  
     
     //build kdtree for search.
-   /* cout<<"building kdtree..."<<endl;
+    /*cout<<"building kdtree..."<<endl;
     t0 = getTickCount();
     vector<Mat> mmm;
     mmm.push_back(alldescriptor);
     matcher.add(mmm);
-    matcher.train();
-    std::cout<<"time cost: "<<(getTickCount()-t0)/getTickFrequency()<<endl;*/
+    matcher.train();*/
+    
 }
 
-
+int VocTree::framesinNode(const node &_node){
+    std::set<int> _set;
+    for (int i = 0; i < _node.descriptor_id.size(); i++) {
+        _set.insert(frameid[_node.descriptor_id[i]]);
+    }
+    return (int)_set.size();
+}
 
 void VocTree::dokmeans(node& _node, int branch){
     Mat *currentDescriptor = new Mat();
@@ -102,60 +96,25 @@ void VocTree::dokmeans(node& _node, int branch){
     
 }
 
-int VocTree::getFrameIDbyDesID(int descriptor_id){
-    for (int i = 0; i < rangeofdescriptor.size(); i++) {
-        int lowerbound = rangeofdescriptor[i];
-        int upperbound = rangeofdescriptor[i+1];
-        if (lowerbound <= descriptor_id && descriptor_id < upperbound) {
-            return i;
-        }
-    }
-    return -1;
-}
+
 
 void VocTree::updateweight(node &_node){
-    frameinNode(_node, _node.frames);
-    _node.weight = log(keyframes.size()*1.0/_node.frames.size());
+    _node.weight = log(keyframes.size()*1.0/framesinNode(_node));
     for (int i = 0; i < _node.child.size(); i++) {
         updateweight(*_node.child[i]);
     }
     //update mean descriptor for the node.
     _node.des.create(1, 128, CV_32F);
+    //std::vector<Mat> _des(_node.descriptor_id.size());
+    for (int i = 0; i < 128; i++) {
+        _node.des.at<float>(0,i) = 0;
+    }
     for (int i = 0; i < _node.descriptor_id.size(); i++) {
         _node.des += alldescriptor.row(_node.descriptor_id[i]);
     }
-    _node.des = _node.des/_node.descriptor_id.size();
+    _node.des = _node.des/(_node.descriptor_id.size()*1.0);
 }
 
-int VocTree::spannedFrames(const node &_node){
-    const int maxframesize = 150;
-    bool flag[maxframesize];
-    memset(flag, false, sizeof(bool)*maxframesize);
-    for (int i = 0; i < _node.descriptor_id.size(); i++) {
-        flag[getFrameIDbyDesID(_node.descriptor_id[i])] = true;
-    }
-    int count = 0;
-    for (int i = 0; i < maxframesize; i++) {
-        if (flag[i] == true) {
-            count++;
-        }
-    }
-    return count;
-}
-
-int VocTree::featureinNodeandFrame(const node &_node, int frame_id){
-    int lowerbound = rangeofdescriptor[frame_id];
-    int upperbound = rangeofdescriptor[frame_id+1];
-
-    int count = 0;
-    for (int i = 0; i < _node.descriptor_id.size(); i++) {
-        int ind = _node.descriptor_id[i];
-        if (lowerbound <= ind && ind < upperbound) {
-            count++;
-        }
-    }
-    return count;
-}
 
 const double MIN_WEIGHT = 0;
 void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int> &candidateframe, int K){
@@ -163,7 +122,8 @@ void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int
     std::fill(v_match.begin(), v_match.end(), 0);
     vector<DMatch> matches;
     int64 t0 = getTickCount();
-    matcher.match(liveframe.descriptor, alldescriptor, matches);
+    kd_matcher->match(liveframe.descriptor, matches);
+    //matcher.match(liveframe.descriptor, alldescriptor, matches);
     //vector<int> index;
     //vector<float> dist;
     //kdtree.knnSearch(liveframe.descriptor, index, dist, 1);
@@ -205,17 +165,10 @@ void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int
                         break;
                     }
                 }*/
-                if (j == loc[level][index]) {
-                    minnode = currNode;
-                    founded = true;
-                }
-                nodequeue.pop();
+                              nodequeue.pop();
             }
             //update matching value.
             if (minnode->weight > MIN_WEIGHT) {
-                for (int i = 0; i < minnode->frames.size(); i++) {
-                    v_match[minnode->frames[i]] += featureinNodeandFrame(*minnode, minnode->frames[i])*(minnode->weight);
-                }
             }
             level++;
         }
@@ -243,21 +196,15 @@ void VocTree::candidateKeyframeSelection2(const Frame& liveframe, std::vector<in
     std::queue<node*> nodequeue;
     nodequeue.push(&root);
     int64 t0 = getTickCount();
-    int level = 0;
     for (int i = 0; i < liveframe.keypoint.size(); i++) {
         while (!nodequeue.empty()) {
             int size = (int)nodequeue.size();
-            node* minnode = nodequeue.front();
-            bool founded = false;
+            const node* minnode = nodequeue.front();
             double mindist = norm(liveframe.descriptor.row(i), minnode->des);
             for (int j = 0; j < size; j++) {
-                node* currNode = nodequeue.front();
+                const node* currNode = nodequeue.front();
                 for (int k = 0; k < currNode->child.size(); k++) {
                     nodequeue.push(currNode->child[k]);
-                }
-                if (founded == true) {
-                    nodequeue.pop();
-                    continue;
                 }
                 //find most similar feature
                 double tmpdist = norm(liveframe.descriptor.row(i), currNode->des);
@@ -269,11 +216,10 @@ void VocTree::candidateKeyframeSelection2(const Frame& liveframe, std::vector<in
             }
             //update matching value.
             if (minnode->weight > MIN_WEIGHT) {
-                for (int i = 0; i < minnode->frames.size(); i++) {
-                    v_match[minnode->frames[i]] += featureinNodeandFrame(*minnode, minnode->frames[i])*(minnode->weight);
+                for (int i = 0; i < minnode->descriptor_id.size(); i++) {
+                    v_match[frameid[minnode->descriptor_id[i]]] += minnode->weight;
                 }
             }
-            level++;
         }
     }
     //find most K relative frame;
@@ -284,7 +230,6 @@ void VocTree::candidateKeyframeSelection2(const Frame& liveframe, std::vector<in
             if (v_match[i] > max) {
                 max = v_match[i];
                 idx = i;
-               
             }
         }
         v_match[idx] = -1;
@@ -293,40 +238,6 @@ void VocTree::candidateKeyframeSelection2(const Frame& liveframe, std::vector<in
     cout<<"time for keyframe recognition: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
 }
 
-void VocTree::frameinNode(const node &_node, std::vector<int> &frames){
-    frames.clear();
-    std::set<int> frameid;
-    for (int i = 0; i < _node.descriptor_id.size(); i++) {
-        int fid = getFrameIDbyDesID(_node.descriptor_id[i]);
-        frameid.insert(fid);
-    }
-    
-    std::set<int>::iterator it;
-    for (it = frameid.begin(); it != frameid.end(); it++) {
-        frames.push_back(*it);
-    }
-}
-
-void VocTree::updateloc(){
-    std::queue<node*> nodequeue;
-    nodequeue.push(&root);
-
-    while (!nodequeue.empty()) {
-        int size = (int)nodequeue.size();
-        std::vector<int> vector_a(alldescriptor.rows);
-        for (int j = 0; j < size; j++) {
-            node* currNode = nodequeue.front();
-            for (int k = 0; k < currNode->descriptor_id.size(); k++) {
-                vector_a[currNode->descriptor_id[k]] = j;
-            }
-            for (int k = 0; k < currNode->child.size(); k++) {
-                nodequeue.push(currNode->child[k]);
-            }
-            nodequeue.pop();
-        }
-        loc.push_back(vector_a);
-    }
-}
 
 bool kptsort(const KeyPoint& a, const KeyPoint& b){
     return a.response > b.response;
@@ -359,9 +270,12 @@ float distP2L(Point2f pt, Point3f line){
 }
 
 bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onlineframe, std::vector<std::vector<DMatch>>& matches){
-    //sort keypoint by DoG strength
-    //std::sort(onlineframe.keypoint.begin(), onlineframe.keypoint.end(), kptsort);
-    const int minNumofTrack = 50;
+    std::vector<Frame> key_frame;
+    for (int i = 0; i < candidateframe.size(); i++) {
+        key_frame.push_back(keyframes[candidateframe[i]]);
+    }
+    return Matching(key_frame, onlineframe, matches);
+    /*const int minNumofTrack = 35;
     std::vector<box> boxes(64);
     int c_size = (int)candidateframe.size();
     for (int i = 0; i < boxes.size(); i++) {
@@ -418,11 +332,11 @@ bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onl
             break;
         }
         for (int i = 0; i < c_size; i++) {
-            showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
+            //     showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
         }
         drawmatchedpoint(onlineframe, matches);
         cout<<"first match: "<<matchsize(matches)<<endl;
-        waitKey(0);
+        // waitKey(0);
         
         //step4: perform second-pass matching
         for (int i = 0; i < boxes.size(); i++) {
@@ -446,7 +360,7 @@ bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onl
             }
         }
         for (int i = 0; i < c_size; i++) {
-            showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
+            //showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
         }
         cout<<"second match: "<<matchsize(matches)<<endl;
         if (matchsize(matches) > minNumofTrack) {
@@ -462,6 +376,121 @@ bool VocTree::twoPassMatching(const std::vector<int> &candidateframe, Frame &onl
             break;
         }
     }
+    for (int i = 0; i < c_size; i++) {
+        showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
+    }
+    return matchsize(matches) > minNumofTrack;*/
+}
+
+bool VocTree::matchWithOnlinepool(Frame& onlineframe, std::vector<std::vector<DMatch>>& poolMatches){
+    return Matching(onlinepool, onlineframe, poolMatches);
+}
+
+bool VocTree::Matching(const std::vector<Frame>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches){
+    const int minNumofTrack = 35;
+    std::vector<box> boxes(64);
+    int c_size = (int)candidateframe.size();
+    for (int i = 0; i < boxes.size(); i++) {
+        boxes[i].idx = i;
+        boxes[i].count = 0;
+    }
+    //counting
+    int xmax = onlineframe.img.cols;
+    int ymax = onlineframe.img.rows;
+    for (int i = 0; i < onlineframe.keypoint.size(); i++) {
+        Point2f pt = onlineframe.keypoint[i].pt;
+        int x_cor = (pt.x/xmax) * 8;
+        int y_cor = (pt.y/ymax) * 8;
+        int bid = x_cor + 8 * y_cor;
+        boxes[bid].count++;
+        boxes[bid].descriptor.push_back(i);
+    }
+    std::sort(boxes.begin(), boxes.end(), greater<box>());
+    
+    //step1: set c1(xj) and c2(xj) to 0.
+    std::vector<int> c1(onlineframe.keypoint.size());
+    std::vector<int> c2(onlineframe.keypoint.size());
+    std::fill(c1.begin(), c1.end(), 0);
+    std::fill(c2.begin(), c2.end(), 0);
+    
+    while (1) {
+        //step2: perform first-pass matching.
+        for (int i = 0; i < boxes.size(); i++) {
+            for (int j = 0; j < boxes[i].descriptor.size(); j++) {
+                int desID = boxes[i].descriptor[j];
+                if (c1[desID] == 0) {
+                    c1[desID] = 1;
+                    bool goodmatch = false;
+                    for (int k = 0; k < c_size; k++) {
+                        const Frame* k_frame = &candidateframe[k];
+                        goodmatch = featurematch(*k_frame, onlineframe, desID, matches[k]);
+                        if (goodmatch) {
+                            break;
+                        }
+                    }
+                    if (goodmatch) { //if xj satisfies the 2NN heuristic, stop matching of Bi.
+                        break;
+                    }
+                }
+            }
+        }
+        //step3: estimate fundamental
+        std::vector<Mat> fundamental(c_size);
+        for (int i = 0; i < c_size; i++) {
+            const Frame* k_frame = &candidateframe[i];
+            refinewithFundamental(*k_frame, onlineframe, matches[i], fundamental[i]);
+        }
+        if (matchsize(matches) > minNumofTrack) { //if there are already N inlier
+            break;
+        }
+        for (int i = 0; i < c_size; i++) {
+            //     showmatches(keyframes[candidateframe[i]], onlineframe, matches[i]);
+        }
+        //cout<<"first match: "<<matchsize(matches)<<endl;
+        // waitKey(0);
+        
+        //step4: perform second-pass matching
+        for (int i = 0; i < boxes.size(); i++) {
+            for (int j = 0; j < boxes[i].descriptor.size(); j++) {
+                int desID = boxes[i].descriptor[j];
+                if (c1[desID] == 1 && c2[desID] == 0) {
+                    c2[desID] = 1;
+                    bool goodmatch = false;
+                    for (int k = 0; k < c_size; k++) {
+                        if (!fundamental[k].empty()) {
+                            goodmatch = epipolarmatch(candidateframe[k], onlineframe, desID, fundamental[k], matches[k]);
+                        }
+                        if (goodmatch) {
+                            break;
+                        }
+                    }
+                    if (goodmatch) {
+                        break;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < c_size; i++) {
+            //showmatches(candidateframe[i], onlineframe, matches[i]);
+        }
+        //cout<<"second match: "<<matchsize(matches)<<endl;
+        if (matchsize(matches) > minNumofTrack) {
+            break;
+        }
+        bool breakflag = true;
+        for (int i = 0; i < onlineframe.keypoint.size(); i++) {
+            if (c1[i] == 0||c2[i] == 0) {
+                breakflag = false;
+            }
+        }
+        if (breakflag) {
+            break;
+        }
+    }
+    for (int i = 0; i < c_size; i++) {
+       // showmatches(candidateframe[i], onlineframe, matches[i]);
+    }
+    cout<<"matched: "<<matchsize(matches)<<endl;
     return matchsize(matches) > minNumofTrack;
 }
 
@@ -556,23 +585,14 @@ void VocTree::updatematchingInfo(const std::vector<int> candidateframe, Frame&on
     ex.compute(onlineframe.img, onlineframe.keypoint, onlineframe.descriptor);
 }
 
-void VocTree::initlastframe(std::vector<int> &candidateframe){
-    if (!lastframe.img.empty()) {
-        keyframes.push_back(lastframe);
-        candidateframe.push_back(keyframes.size()-1);
-    }
-}
 
-void VocTree::updatelastframe(Frame &onlineframe){
-    lastframe = onlineframe;
-    keyframes.pop_back();
-}
 
-bool VocTree::calibrate(const Frame &onlineframe, const std::vector<std::vector<DMatch>> &matches,const std::vector<int>& candidateframe, cv::Mat& rvec, cv::Mat&tvec){
+
+bool VocTree::calibrate(const Frame &onlineframe, const std::vector<std::vector<DMatch>> &matches,const std::vector<int>& candidateframe, const std::vector<std::vector<DMatch>>& poolmatches, cv::Mat& rvec, cv::Mat&tvec){
     int64 t0 = getTickCount();
     vector<Point3f> objpoints;
     vector<Point2f> imgpoints;
-  
+
     std::set<int> _set;
     for (int i = 0; i < matches.size(); i++) {
         for (int j = 0; j < matches[i].size(); j++) {
@@ -580,13 +600,21 @@ bool VocTree::calibrate(const Frame &onlineframe, const std::vector<std::vector<
                 objpoints.push_back(keyframes[candidateframe[i]].pos3d[matches[i][j].trainIdx]);
                 //imgpoints.push_back(onlineframe.pos[matches[i][j].queryIdx]);
                 imgpoints.push_back(onlineframe.keypoint[matches[i][j].queryIdx].pt);
-                _set.insert(matches[i][j].queryIdx);
+              //  _set.insert(matches[i][j].queryIdx);
             }
+        }
+    }
+    for (int i = 0; i < poolmatches.size(); i++) {
+        for (int j = 0; j < poolmatches[i].size(); j++) {
+            objpoints.push_back(onlinepool[i].pos3d[poolmatches[i][j].trainIdx]);
+            imgpoints.push_back(onlineframe.keypoint[poolmatches[i][j].queryIdx].pt);
+            //_set.insert(matches[i][j].queryIdx);
         }
     }
     if (objpoints.size()<4) {
         return false;
     }
+    drawmatchedpoint(onlineframe, matches, poolmatches);
     cout<<"pattern size: "<<_set.size()<<endl;
     //solvePnP(objpoints, imgpoints, intrinsic, distCoeffs, rvec, tvec);
     solvePnPRansac(objpoints, imgpoints, intrinsic, distCoeffs, rvec, tvec);
@@ -595,34 +623,27 @@ bool VocTree::calibrate(const Frame &onlineframe, const std::vector<std::vector<
     return _set.size() >= 70;
 }
 
-void VocTree::matchlast(Frame &onlineframe, std::vector<std::vector<DMatch>> &matches){
-    if (lastframe.img.empty()) {
-        return;
-    }
-    //FlannBasedMatcher bf;
-    BFMatcher bf(cv::NORM_HAMMING, true);
-    std::vector<DMatch> mt;
-    onlineframe.descriptor.convertTo(onlineframe.descriptor, CV_32F);
-    lastframe.descriptor.convertTo(lastframe.descriptor, CV_32F);
-    bf.match(onlineframe.descriptor, lastframe.descriptor, mt);
-    Mat tmp;
-    drawMatches(onlineframe.img, onlineframe.keypoint, lastframe.img, lastframe.keypoint, mt, tmp);
-    imshow("last", tmp);
-    waitKey(0);
-    matches.pop_back();
-    matches.push_back(mt);
-}
-
 void VocTree::draw(const string windowname,const Frame &onlineframe, const cv::Mat &rvec, const cv::Mat &tvec, cv::Mat &outputimg){
     ARDrawingContext arctx(windowname, intrinsic, rvec, tvec, onlineframe);
     arctx.draw();
     waitKey(0);
 }
 
+Point3f muti(Point3f vecba, Point3f vecbc){
+    return Point3f(vecba.y*vecbc.z-vecbc.y*vecba.z,vecba.z*vecbc.x-vecbc.z*vecba.x,vecba.x*vecbc.y-vecbc.x*vecba.y);
+}
 void VocTree::rendering(const Frame &onlineframe, const cv::Mat &rvec, const cv::Mat &tvec, cv::Mat &outputimg){
+
     int64 t0 = getTickCount();
     onlineframe.img.copyTo(outputimg);
     std::vector<Point3f> pt3d;
+    
+    std::vector<Point2f> origin2d;
+    std::vector<Point3f> origin3d;
+    for (int i = 0; i < onlineframe.pos3d.size(); i++) {
+        
+    }
+    
     for (int i = 0; i < scenepoints.size(); i++) {
         pt3d.push_back(scenepoints[i].pt);
     }
@@ -632,9 +653,17 @@ void VocTree::rendering(const Frame &onlineframe, const cv::Mat &rvec, const cv:
     }
     int myradius=1;
     for (int i=0;i<pt2d.size();i++){
-        circle(outputimg,cvPoint(pt2d[i].x,pt2d[i].y),myradius,CV_RGB(255,255,0),-1,8,0);
+        if (i%1 == 0) {
+            circle(outputimg,cvPoint(pt2d[i].x,pt2d[i].y),myradius,CV_RGB(255,255,0),-1,8,0);
+        }
     }
-    
+   /* for (int i = 0; i < kpt2d.size(); i++) {
+        for (int j = 0; j < kpt2d.size(); j++) {
+            if (i != j) {
+                line(outputimg, kpt2d[i], kpt2d[j], CV_RGB(255, 0, 255));
+            }
+        }
+    }*/
     /*std::vector<Point3f> axis;
     findChessboardCorners(keyframes[0].img, Size(3,3), axis);
     std::vector<Point2f> axis2d;
@@ -691,7 +720,9 @@ bool VocTree::ordinarymatching(const std::vector<int> &candidateframe, Frame&onl
    
     //showmatch(candidateframe, "first", onlineframe, matches);
     std::vector<Mat> F(candidateframe.size());
-    refineMatchesWithHomography(candidateframe, onlineframe, matches, F);
+    for (int i = 0; i < candidateframe.size(); i++) {
+        refinewithFundamental(keyframes[candidateframe[i]], onlineframe, matches[i], F[i]);
+    }
     Mat tmp;
     std::set<int> _set;
     tmp = onlineframe.img.clone();
@@ -703,8 +734,8 @@ bool VocTree::ordinarymatching(const std::vector<int> &candidateframe, Frame&onl
     }
      cout<<"time for feature matching: "<<(getTickCount()-tt)/getTickFrequency()<<"size: "<<_set.size()<<endl;
     imshow("matched", tmp);
-    showmatch(candidateframe, "final",onlineframe, matches);
-    return _set.size()>=60;
+  //  showmatch(candidateframe, "final",onlineframe, matches);
+    return _set.size()>=40;
 }
 
 bool VocTree::refineMatchesWithHomography(const std::vector<int> &candidateframe, Frame &onlineframe, std::vector<std::vector<DMatch>> &matches, std::vector<Mat>& Fundamental){
@@ -755,16 +786,67 @@ bool VocTree::refineMatchesWithHomography(const std::vector<int> &candidateframe
     return true;
 }
 
-void rotateimg(Mat& img){
-    cv::Point2f center = cv::Point2f(img.cols / 2, img.rows / 2);
-    double angle = 270;
-    double scale = 1;
+void VocTree::updateonlinepool(const std::vector<int> &candidateframe, const std::vector<std::vector<DMatch>> &matches, const std::vector<std::vector<DMatch>> &poolmatches, Frame &onlineframe){
     
-    cv::Mat rotateMat;
-    rotateMat = cv::getRotationMatrix2D(center, angle, scale);
-    cv::warpAffine(img, img, rotateMat, img.size());
+    
+    //convert keypoint
+    std::vector<KeyPoint> tmpkpt;
+    for (int i = 0; i < matches.size(); i++) {
+        for (int j = 0; j < matches[i].size(); j++) {
+            Point3f pos3d = keyframes[candidateframe[i]].pos3d[matches[i][j].trainIdx];
+            onlineframe.pos3d.push_back(pos3d);
+            tmpkpt.push_back(onlineframe.keypoint[matches[i][j].queryIdx]);
+        }
+    }
+    for (int i = 0; i < poolmatches.size(); i++) {
+        for (int j = 0; j < poolmatches[i].size(); j++) {
+            Point3f pos3d = onlinepool[i].pos3d[poolmatches[i][j].trainIdx];
+            onlineframe.pos3d.push_back(pos3d);
+            tmpkpt.push_back(onlineframe.keypoint[poolmatches[i][j].queryIdx]);
+        }
+    }
+    onlineframe.keypoint.swap(tmpkpt);
+
+    //train descriptor
+    SiftDescriptorExtractor ex;
+    ex.compute(onlineframe.img, onlineframe.keypoint, onlineframe.descriptor);
+    onlineframe.d_matcher = new FlannBasedMatcher();
+    std::vector<Mat> des(1);
+    des[0] = onlineframe.descriptor.clone();
+    onlineframe.d_matcher->add(des);
+    onlineframe.d_matcher->train();
+    
+    std::vector<std::vector<DMatch>> countmat;
+    for (int i = 0; i < poolmatches.size(); i++) {
+        countmat.push_back(poolmatches[i]);
+    }
+    for (int i = 0; i < matches.size(); i++) {
+        countmat.push_back(matches[i]);
+    }
+    if (matchsize(countmat) < 50) {
+        return;
+    }
+    
+    onlinepool.push_back(onlineframe);
+    while (onlinepool.size()>4) {
+        onlinepool.erase(onlinepool.begin());
+    }
+    return;
 }
 
 int VocTree::framesize(){
-    return keyframes.size();
+    return (int)keyframes.size();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

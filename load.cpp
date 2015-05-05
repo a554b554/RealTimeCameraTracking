@@ -29,6 +29,15 @@ void meanMat(const std::vector<Mat>& inputmat, Mat& output){
     //cout<<output;
 }
 
+void rotateimg(Mat& img){
+    cv::Point2f center = cv::Point2f(img.cols / 2, img.rows / 2);
+    double angle = 180;
+    double scale = 1;
+    
+    cv::Mat rotateMat;
+    rotateMat = cv::getRotationMatrix2D(center, angle, scale);
+    cv::warpAffine(img, img, rotateMat, img.size());
+}
 void calculateDescriptor(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint){
     //calculate descriptor for each frame
     for (int i = 0; i < globalframe.size(); i++) {
@@ -594,7 +603,6 @@ void computeAttribute2(std::vector<Frame>& globalframe, std::vector<ScenePoint>&
          curr->d_matcher->train();
     }
     gettime(t0);
-    
 }
 
 void loadonlineimglist(const string basepath, std::vector<string>& filename){
@@ -624,4 +632,27 @@ void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DM
         }
     }
     imshow("matched point", tmp);
+}
+
+void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches1, const std::vector<std::vector<DMatch>>& matches2){
+    Mat tmp;
+    tmp = onlineframe.img.clone();
+    for (int i = 0; i < matches1.size(); i++) {
+        for (int j = 0; j < matches1[i].size(); j++) {
+            circle(tmp, onlineframe.keypoint[matches1[i][j].queryIdx].pt, 3, CV_RGB(0, 255, 0),2);
+        }
+    }
+    for (int i = 0; i < matches2.size(); i++) {
+        for (int j = 0; j < matches2[i].size(); j++) {
+            circle(tmp, onlineframe.keypoint[matches2[i][j].queryIdx].pt, 3, CV_RGB(255, 0, 0),2);
+        }
+    }
+    imshow("matched point", tmp);
+}
+
+void printmatchinfo(const std::vector<int> candi){
+    for (int i = 0; i < candi.size(); i++) {
+        cout<<candi[i]<<" ";
+    }
+    cout<<endl;
 }

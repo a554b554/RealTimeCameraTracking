@@ -20,17 +20,10 @@
 
 void KeyframeSelection(const std::vector<Frame>& inputframe, const std::vector<ScenePoint>& inputscenepoint
                        ,std::vector<int>& outputkeyframe);
-
 double CompletenessTerm(const std::vector<Frame>& inputframe, const std::vector<int>& candidateframe, const std::vector<ScenePoint>& inputscenepoint);
-
 double Redundancy(const std::vector<Frame>& inputframe, const std::vector<int>& candidateframe, const std::vector<ScenePoint>& inputscenepoint);
-
-
 double FeatureDensity(const ScenePoint& pt, const std::vector<Frame>& inputframe);
-
 //uchar DoG(const Mat& img, Point2f position);
-
 void fakeKeyFrameSelection(std::vector<int>& keyframes, string basepath);
-
 int countscnenpoint(const std::vector<ScenePoint>& scenepoint, int threshold);
 #endif /* defined(__RCT__OfflineModule__) */
