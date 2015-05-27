@@ -57,6 +57,7 @@ public:
     int matchsize(const std::vector<std::vector<DMatch>>& matches);
     std::vector<Frame> onlinepool;
     void updateonlinepool(const std::vector<int>& candidateframe, const std::vector<std::vector<DMatch>>& matches, const std::vector<std::vector<DMatch>>& poolmatches, Frame& onlineframe);
+    void showcandidate(const std::vector<int>& candidateframe);
     
 private:
     std::vector<Frame> keyframes;
@@ -74,6 +75,7 @@ private:
     bool Matching(const std::vector<Frame>& candidateframe, Frame& onlineframe, std::vector<std::vector<DMatch>>& matches);
     double reprojectError(const std::vector<Point2d>& origin2D, const std::vector<Point2d>& projected2D);
     void addPosInfo(const std::vector<int>& candidateframe, Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
+    double RMSE(const std::vector<Point3f>& objpoints, const std::vector<Point2f>& imgpoints,const Mat& rvec, const Mat& tvec);
 };
 
 struct box{

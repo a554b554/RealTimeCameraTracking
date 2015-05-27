@@ -236,6 +236,10 @@ void gettime(int64& t0){
     t0 = getTickCount();
 }
 
+bool sortimg(const Frame& a, const Frame& b){
+    return a.filename < b.filename;
+}
+
 void load(const string basepath, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint){
     ifstream file_obj;
     int numberofframe;
@@ -259,6 +263,7 @@ void load(const string basepath, std::vector<Frame>& globalframe, std::vector<Sc
     for (int i = 0; i < numberofframe; i++) {
         string fn;
         file_obj>>fn;
+        globalframe[i].filename = fn;
         const string imgpath = basepath + "/offline/" + fn;
         globalframe[i].img = cv::imread(imgpath);
         if (globalframe[i].img.empty()) {
@@ -335,6 +340,39 @@ void load(const string basepath, std::vector<Frame>& globalframe, std::vector<Sc
     }
     getTimer();
     file_obj.close();
+}
+
+void rendering(const Frame& frame, const std::vector<ScenePoint>& scenept, const string basepath, Mat& outimg){
+    std::vector<Point2f> imgpt;
+    std::vector<Point3f> objpt;
+    for (int i = 0; i < frame.pos3d.size(); i++) {
+        imgpt.push_back(frame.pos[i]);
+        objpt.push_back(frame.pos3d[i]);
+    }
+    
+    Mat intrinsic,distCoeffs;
+    FileStorage fs(basepath+"/out_camera_data.xml", FileStorage::READ);
+    fs["Camera_Matrix"] >> intrinsic;
+    fs["Distortion_Coefficients"] >> distCoeffs;
+    cout<<"intrinsic parameter: "<<intrinsic<<endl;
+    cout<<"distortion coeffs: "<<distCoeffs<<endl;
+    fs.release();
+    
+    Mat rvec,tvec;
+    solvePnP(objpt, imgpt, intrinsic, distCoeffs, rvec, tvec);
+    outimg = frame.img.clone();
+    outimg.setTo(Scalar(0,0,0));
+    std::vector<Point2f> projectpt;
+    std::vector<Point3f> allpt;
+    for (int i = 0; i < scenept.size(); i++) {
+        allpt.push_back(scenept[i].pt);
+    }
+    projectPoints(allpt, rvec, tvec, intrinsic, distCoeffs, projectpt);
+    for (int i = 0; i < projectpt.size(); i++) {
+        //circle(outimg, projectpt[i], 1, CV_RGB(255,255,0));
+        circle(outimg, projectpt[i], 1, CV_RGB(scenept[i].RGB.x,scenept[i].RGB.y,scenept[i].RGB.z));
+    }
+    imshow("project", outimg);
 }
 
 void setupIndex(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint){
@@ -605,12 +643,12 @@ void computeAttribute2(std::vector<Frame>& globalframe, std::vector<ScenePoint>&
     gettime(t0);
 }
 
-void loadonlineimglist(const string basepath, std::vector<string>& filename){
+void loadonlineimglist(const string basepath, std::vector<string>& filename, string listfilename){
     fstream fobj;
-    fobj.open(basepath+"/online/list.txt");
+    fobj.open(basepath+"/online/"+listfilename);
     string fn;
     while (fobj>>fn) {
-        filename.push_back(fn);
+        filename.push_back(basepath+"/online/"+fn);
     }
 }
 
@@ -655,4 +693,22 @@ void printmatchinfo(const std::vector<int> candi){
         cout<<candi[i]<<" ";
     }
     cout<<endl;
+}
+
+void loadimgfromlist(std::vector<Frame>& frames,const std::vector<string>& filelist){
+    frames.clear();
+    frames.resize(filelist.size());
+    for (int i = 0; i < filelist.size(); i++) {
+        frames[i].img = imread(filelist[i]);
+        //imshow("fram", frames[i].img);
+        //waitKey(0);
+    }
+}
+void computeAttribute3(std::vector<Frame>& frames){
+    SiftFeatureDetector detector(500);
+    SiftDescriptorExtractor extractor;
+    for (int i = 0; i < frames.size(); i++) {
+        detector.detect(frames[i].img, frames[i].keypoint);
+        extractor.compute(frames[i].img, frames[i].keypoint, frames[i].descriptor);
+    }
 }

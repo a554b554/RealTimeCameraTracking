@@ -25,12 +25,13 @@
 #include <opencv2/nonfree/features2d.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/nonfree/ocl.hpp>
-
+#include <opencv2/calib3d/calib3d.hpp>
+bool sortimg(const Frame& a, const Frame& b);
 void computekeypoint(Frame& frame, const vector<Point2f>& point);
 void load(const string basepath, std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 void load2(const string filename, std::vector<Frame>& keyframes, std::vector<ScenePoint>& scenepoints, const std::vector<int>& key);
 
-
+void rendering(const Frame& frame, const std::vector<ScenePoint>& scenept, const string basepath, Mat& outimg);
 void computeAttribute(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 void computeAttribute2(std::vector<Frame>& globalframe, std::vector<ScenePoint>& globalscenepoint);
 void rotateimg(Mat& img);
@@ -44,7 +45,9 @@ void draw(const Frame& frame, string windowname);
 void drawnativekeypoints(const Frame& frame, string windowname);
 void drawmatch(Frame& frame, string windowname, int type);
 void drawmatch2(Frame& frame1, Frame& frame2, string windowname);
-void loadonlineimglist(const string basepath, std::vector<string>& filename);
+void loadonlineimglist(const string basepath, std::vector<string>& filename, string listfilename);
+void loadimgfromlist(std::vector<Frame>& frames,const std::vector<string>& filelist);
+void computeAttribute3(std::vector<Frame>& frames);
 
 string toString(int a);
 
@@ -54,6 +57,6 @@ void showallframe(const std::vector<Frame>& frameset);
 void showmatches(const Frame& keyframe, const Frame& onlineframe, const std::vector<DMatch>& matches);
 void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches1, const std::vector<std::vector<DMatch>>& matches2);
 void drawmatchedpoint(const Frame& onlineframe, const std::vector<std::vector<DMatch>>& matches);
-
 void printmatchinfo(const std::vector<int> candi);
+
 #endif /* defined(__RCT__load__) */

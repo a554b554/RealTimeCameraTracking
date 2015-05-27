@@ -33,6 +33,7 @@ public:
     vector<int> featuredensity; // the density of each keypoint
     cv::flann::Index kdtree;
     FlannBasedMatcher* d_matcher;
+    string filename;
 private:
 };
 

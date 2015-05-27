@@ -21,7 +21,7 @@ using namespace std;
 #include "cameraCalibration.h"
 #include <dirent.h>
 #include <fstream>
-
+#include <algorithm>
 vector<Mat> images;
 vector<string> images_name;
 
@@ -31,15 +31,16 @@ enum{
     MODE_OFFLINE,
     MODE_ONLINE,
     MODE_DOWNSAMPLE,
-    MODE_TEST
+    MODE_TEST,
+    MODE_OFFLINE_RENDERING,
+    MODE_TESTVOCTREE
 };
 
 int main(int ac, char** av) {
     
-    
     //////////////////////////////
     int mode = MODE_ONLINE;
-    const string basepath = "./desktop";
+    const string basepath = "./office";
     if (mode == MODE_CALIBRATION) {
         startcalibration(basepath);
         return 0;
@@ -69,7 +70,7 @@ int main(int ac, char** av) {
         tree.loadCameraMatrix(basepath);
         tree.init(10, 5);
         std::vector<string> filelist;
-        loadonlineimglist(basepath, filelist);
+        loadonlineimglist(basepath, filelist,"list.txt");
         sort(filelist.begin(), filelist.end());
         namedWindow("show");
         Mat odR,odT;
@@ -77,7 +78,7 @@ int main(int ac, char** av) {
         for (int i = 0; i < filelist.size(); i++) {
             int64 t1 = getTickCount();
             std::vector<int> candi;
-            Mat test = imread(basepath+"/online/"+filelist[i]);
+            Mat test = imread(filelist[i]);
             if (test.empty()) {
                 break;
             }
@@ -86,11 +87,11 @@ int main(int ac, char** av) {
             Frame t_frame;
             tree.cvtFrame(test, t_frame);
             tree.candidateKeyframeSelection2(t_frame, candi, 4);
-            cout<<"Frame: "<<i<<endl;
-            printmatchinfo(candi);
+            tree.showcandidate(candi);
             std::vector<std::vector<DMatch>> matches(candi.size());
             std::vector<std::vector<DMatch>> poolmatches(tree.onlinepool.size());
             tree.twoPassMatching(candi, t_frame, matches);
+            
             tree.matchWithOnlinepool(t_frame, poolmatches);
             if(tree.matchsize(matches)<25&&tree.matchsize(poolmatches)<25){
                 continue;
@@ -157,19 +158,39 @@ int main(int ac, char** av) {
             cout<<b;
         }
     }
+    else if(mode == MODE_OFFLINE_RENDERING){
+        std::vector<Frame> inputframe;
+        vector<ScenePoint> inputpoint;
+        cout<<"loading..."<<endl;
+        load(basepath, inputframe, inputpoint);
+        sort(inputframe.begin(), inputframe.end(), sortimg);
+        for (int i = 0; i < inputframe.size(); i++) {
+            Mat outimg;
+            rendering(inputframe[i], inputpoint,basepath,outimg);
+            imwrite(basepath+"/output/"+toString(i)+".jpg", outimg);
+            waitKey(1);
+        }
+    }
+    else if(mode == MODE_TESTVOCTREE){
+        vector<Frame> keyframes;
+        vector<ScenePoint> scenepoints;
+        vector<string> framelist;
+        loadonlineimglist(basepath, framelist, "list.txt");
+        loadimgfromlist(keyframes, framelist);
+        computeAttribute3(keyframes);
+        node root;
+        VocTree tree(keyframes,scenepoints, root);
+        tree.init(10,5);
+        for (int i = 0; i < keyframes.size(); i++) {
+            std::vector<int> candi;
+            tree.candidateKeyframeSelection2(keyframes[i], candi, 4);
+            tree.showcandidate(candi);
+            imshow("origin",keyframes[i].img);
+            waitKey(0);
+        }
+    }
     return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 

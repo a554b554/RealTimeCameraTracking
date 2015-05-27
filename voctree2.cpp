@@ -116,7 +116,6 @@ void VocTree::updateweight(node &_node){
 }
 
 
-const double MIN_WEIGHT = 0;
 void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int> &candidateframe, int K){
     vector<double> v_match(keyframes.size());
     std::fill(v_match.begin(), v_match.end(), 0);
@@ -168,7 +167,7 @@ void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int
                               nodequeue.pop();
             }
             //update matching value.
-            if (minnode->weight > MIN_WEIGHT) {
+            if (minnode->weight > 0) {
             }
             level++;
         }
@@ -190,17 +189,21 @@ void VocTree::candidateKeyframeSelection(const Frame &liveframe, std::vector<int
     }
 }
 
+const double MIN_WEIGHT = 1;
+
 void VocTree::candidateKeyframeSelection2(const Frame& liveframe, std::vector<int>& candidateframe, int K){
+    candidateframe.clear();
     vector<double> v_match(keyframes.size());
     std::fill(v_match.begin(), v_match.end(), 0);
-    std::queue<node*> nodequeue;
-    nodequeue.push(&root);
+
     int64 t0 = getTickCount();
     for (int i = 0; i < liveframe.keypoint.size(); i++) {
+        std::queue<node*> nodequeue;
+        nodequeue.push(&root);
         while (!nodequeue.empty()) {
             int size = (int)nodequeue.size();
             const node* minnode = nodequeue.front();
-            double mindist = norm(liveframe.descriptor.row(i), minnode->des);
+            double mindist = norm(liveframe.descriptor.row(i), minnode->des,NORM_L2);
             for (int j = 0; j < size; j++) {
                 const node* currNode = nodequeue.front();
                 for (int k = 0; k < currNode->child.size(); k++) {
@@ -216,8 +219,8 @@ void VocTree::candidateKeyframeSelection2(const Frame& liveframe, std::vector<in
             }
             //update matching value.
             if (minnode->weight > MIN_WEIGHT) {
-                for (int i = 0; i < minnode->descriptor_id.size(); i++) {
-                    v_match[frameid[minnode->descriptor_id[i]]] += minnode->weight;
+                for (int c = 0; c < minnode->descriptor_id.size(); c++) {
+                    v_match[frameid[minnode->descriptor_id[c]]] += minnode->weight;
                 }
             }
         }
@@ -586,7 +589,11 @@ void VocTree::updatematchingInfo(const std::vector<int> candidateframe, Frame&on
 }
 
 
-
+double VocTree::RMSE(const std::vector<Point3f> &objpoints, const std::vector<Point2f> &imgpoints, const cv::Mat &rvec, const cv::Mat &tvec){
+    std::vector<Point2f> projectedpoints;
+    projectPoints(objpoints, rvec, tvec, intrinsic, distCoeffs, projectedpoints);
+    return norm(imgpoints, projectedpoints,NORM_L2)/sqrt(objpoints.size());
+}
 
 bool VocTree::calibrate(const Frame &onlineframe, const std::vector<std::vector<DMatch>> &matches,const std::vector<int>& candidateframe, const std::vector<std::vector<DMatch>>& poolmatches, cv::Mat& rvec, cv::Mat&tvec){
     int64 t0 = getTickCount();
@@ -618,6 +625,7 @@ bool VocTree::calibrate(const Frame &onlineframe, const std::vector<std::vector<
     cout<<"pattern size: "<<_set.size()<<endl;
     //solvePnP(objpoints, imgpoints, intrinsic, distCoeffs, rvec, tvec);
     solvePnPRansac(objpoints, imgpoints, intrinsic, distCoeffs, rvec, tvec);
+    cout<<"RMSE error:"<<RMSE(objpoints, imgpoints, rvec, tvec)<<endl;
     //calibrateCamera(objpoints, imgpoints, onlineframe.img.size(), cameraMat, distCoeffs, rvec, tvec);
     cout<<"time for solvePNP: "<<(getTickCount()-t0)/getTickFrequency()<<endl;
     return _set.size() >= 70;
@@ -635,14 +643,13 @@ Point3f muti(Point3f vecba, Point3f vecbc){
 void VocTree::rendering(const Frame &onlineframe, const cv::Mat &rvec, const cv::Mat &tvec, cv::Mat &outputimg){
 
     int64 t0 = getTickCount();
-    onlineframe.img.copyTo(outputimg);
+    //onlineframe.img.copyTo(outputimg);
+    outputimg.create(onlineframe.img.rows, onlineframe.img.cols, onlineframe.img.type());
+    outputimg.setTo(0);
     std::vector<Point3f> pt3d;
     
     std::vector<Point2f> origin2d;
     std::vector<Point3f> origin3d;
-    for (int i = 0; i < onlineframe.pos3d.size(); i++) {
-        
-    }
     
     for (int i = 0; i < scenepoints.size(); i++) {
         pt3d.push_back(scenepoints[i].pt);
@@ -653,8 +660,9 @@ void VocTree::rendering(const Frame &onlineframe, const cv::Mat &rvec, const cv:
     }
     int myradius=1;
     for (int i=0;i<pt2d.size();i++){
+        Scalar color = CV_RGB(scenepoints[i].RGB.x, scenepoints[i].RGB.y, scenepoints[i].RGB.z);
         if (i%1 == 0) {
-            circle(outputimg,cvPoint(pt2d[i].x,pt2d[i].y),myradius,CV_RGB(255,255,0),-1,8,0);
+            circle(outputimg,cvPoint(pt2d[i].x,pt2d[i].y),myradius,color,-1,8,0);
         }
     }
    /* for (int i = 0; i < kpt2d.size(); i++) {
@@ -813,6 +821,9 @@ void VocTree::updateonlinepool(const std::vector<int> &candidateframe, const std
     onlineframe.d_matcher = new FlannBasedMatcher();
     std::vector<Mat> des(1);
     des[0] = onlineframe.descriptor.clone();
+    if (des[0].rows == 0) {
+        return;
+    }
     onlineframe.d_matcher->add(des);
     onlineframe.d_matcher->train();
     
@@ -838,7 +849,50 @@ int VocTree::framesize(){
     return (int)keyframes.size();
 }
 
-
+void VocTree::showcandidate(const std::vector<int> &candidateframe){
+    //std::vector<Mat> resizedKeyframe(keyframes.size());
+    const int factor = 2;
+    int xsize = factor * keyframes[0].img.cols;
+    int ysize = factor * keyframes[0].img.rows;
+    Mat final(ysize,xsize,keyframes[0].img.type());
+    final.setTo(0);
+    int _row = 1;
+    int framesize = (int)keyframes.size();
+    while (1) {
+        if (_row*_row>framesize) {
+            break;
+        }
+        else{
+            _row*=2;
+        }
+    }
+    int width = xsize/_row;
+    int height = ysize/_row;
+    for (int i = 0; i < framesize; i++) {
+        Rect rct(i%_row*width,i/_row*height,width,height);
+        Mat ref = final(rct);
+        Mat resized;
+        resize(keyframes[i].img, resized, Size(width,height));
+        resized.copyTo(ref);
+       // imshow("resize", ref);
+        //waitKey(0);
+    }
+    for (int i = 0; i < candidateframe.size(); i++) {
+        int id = candidateframe[i];
+        Rect rect(id%_row*width,id/_row*height,width,height);
+        if (i == 0) {
+            rectangle(final, rect, CV_RGB(0, 255, 0),2);
+        }
+        else if (i == 1){
+            rectangle(final, rect, CV_RGB(255, 0, 0),2);
+        }
+        else{
+            rectangle(final, rect, CV_RGB(0, 0, 255),2);
+        }
+    }
+    imshow("voc tree", final);
+    //waitKey(0);
+}
 
 
 
